@@ -341,7 +341,9 @@ render "$BUNDLE/service.unit" > "/etc/systemd/system/$NAME.service"
 render "$BUNDLE/backup.service.unit" > "/etc/systemd/system/$NAME-backup.service"
 render "$BUNDLE/backup.timer.unit" > "/etc/systemd/system/$NAME-backup.timer"
 chmod 0644 "/etc/systemd/system/$NAME.service" "/etc/systemd/system/$NAME-backup.service" "/etc/systemd/system/$NAME-backup.timer"
-install -m 0755 "$BUNDLE/backup.sh" /usr/local/sbin/$NAME-backup
+# The install name becomes the backup script's default, so running it by hand needs no NAME.
+sed "s/^NAME=\"\${NAME:-mcp-server-imap-smtp}\"/NAME=\"\${NAME:-$NAME}\"/" "$BUNDLE/backup.sh" > "/usr/local/sbin/$NAME-backup.new"
+chmod 0755 "/usr/local/sbin/$NAME-backup.new" && mv -f "/usr/local/sbin/$NAME-backup.new" "/usr/local/sbin/$NAME-backup"
 [[ -f $BUNDLE/smoke.sh ]] && install -m 0755 "$BUNDLE/smoke.sh" /usr/local/sbin/$NAME-smoke
 cat > "/usr/local/sbin/$NAME-admin.new" <<EOF
 #!/bin/sh
