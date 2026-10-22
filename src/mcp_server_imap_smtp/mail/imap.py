@@ -366,7 +366,15 @@ class ImapClient:
         empty = {"personal": [], "other": [], "shared": []}
         caps = getattr(self.c, "capabilities", None)
         if caps is not None and "NAMESPACE" not in {str(c).upper() for c in caps}:
-            return empty
+            # imaplib keeps the capabilities from before login, and Dovecot lists NAMESPACE only after it,
+            # so ask the server again before deciding it has none.
+            try:
+                typ, data = self.c.capability()
+                caps = data[0].decode(errors="replace").upper().split() if typ == "OK" and data and data[0] else []
+            except imaplib.IMAP4.error:
+                caps = []
+            if "NAMESPACE" not in caps:
+                return empty
         try:
             typ, data = self.c.namespace()
         except imaplib.IMAP4.error:          # BAD from a server that does not support it after all

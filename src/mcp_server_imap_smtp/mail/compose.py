@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Build outgoing messages: new, reply (threaded), forward (original attached)."""
+"""Build outgoing messages: new, reply (threaded), forward (original attached). Images in an HTML body travel
+inside the message as cid: parts (mail/inline.py)."""
 from __future__ import annotations
 
 import re
@@ -8,7 +9,7 @@ from email.message import EmailMessage
 from email.parser import BytesHeaderParser, BytesParser
 from email.utils import formataddr, formatdate, getaddresses, make_msgid, parseaddr
 
-from . import render
+from . import inline, render
 from .imap import MailError
 
 _CTRL = re.compile(r"[\r\n\0]")
@@ -39,16 +40,25 @@ def _set(m: EmailMessage, name: str, value: str) -> None:
         raise MailError(f"invalid {name} header") from exc
 
 
-def _base(from_addr: str, subject: str, text: str, html: str | None) -> EmailMessage:
+def _base(from_addr: str, subject: str, text: str, html: str | None, fetch=inline.fetch_https) -> EmailMessage:
     sender = _address(from_addr, "From address")
+    domain = sender.rpartition("@")[2]
+    images = []
+    if html:
+        html, images = inline.embed(html, domain, fetch)
     m = EmailMessage()
     _set(m, "From", from_addr)
     _set(m, "Subject", subject)
     m["Date"] = formatdate(localtime=True)
-    m["Message-ID"] = make_msgid(domain=sender.rpartition("@")[2])
+    m["Message-ID"] = make_msgid(domain=domain)
     m.set_content(text)
     if html:
         m.add_alternative(html, subtype="html")
+        # multipart/alternative: text/plain, then multipart/related holding the HTML and its images
+        body = m.get_payload()[-1]
+        for img in images:
+            body.add_related(img.data, "image", img.subtype, cid=f"<{img.cid}>", disposition="inline",
+                             filename=img.filename)
     return m
 
 
@@ -59,10 +69,10 @@ def _mailboxes(values, what: str) -> str:
     return ", ".join(values)
 
 
-def new(from_addr, to, subject, text, html=None, cc=(), bcc=()) -> EmailMessage:
+def new(from_addr, to, subject, text, html=None, cc=(), bcc=(), fetch=inline.fetch_https) -> EmailMessage:
     to_h, cc_h = _mailboxes(to, "recipient"), _mailboxes(cc, "Cc recipient")
     _mailboxes(bcc, "Bcc recipient")  # not a header, but it is sent to the server as an envelope recipient
-    m = _base(from_addr, subject, text, html)
+    m = _base(from_addr, subject, text, html, fetch)
     _set(m, "To", to_h)
     if cc_h:
         _set(m, "Cc", cc_h)
@@ -94,7 +104,7 @@ def _join(pairs) -> str:
     return ", ".join(formataddr(p) for p in pairs)
 
 
-def reply(original_raw: bytes, from_addr, text, html=None, reply_all=False) -> EmailMessage:
+def reply(original_raw: bytes, from_addr, text, html=None, reply_all=False, fetch=inline.fetch_https) -> EmailMessage:
     o = render.summarise(original_raw)
     reply_to = BytesHeaderParser(policy=policy.default).parsebytes(original_raw).get("Reply-To")
     targets = _pairs(str(reply_to)) if reply_to else []
@@ -105,7 +115,7 @@ def reply(original_raw: bytes, from_addr, text, html=None, reply_all=False) -> E
         raise MailError("the original message has no sender address to reply to")
     quoted = "\n".join("> " + line for line in o["text"].splitlines())
     body = f"{text}\n\nOn {o['date']}, {o['from']} wrote:\n{quoted}\n"
-    m = _base(from_addr, _prefixed("Re:", o["subject"]), body, html)
+    m = _base(from_addr, _prefixed("Re:", o["subject"]), body, html, fetch)
     _set(m, "To", _join(targets))
     if reply_all:
         skip = {parseaddr(from_addr)[1].lower()} | {a.lower() for _, a in targets}

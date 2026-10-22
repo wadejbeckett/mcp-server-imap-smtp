@@ -28,7 +28,7 @@ from .. import audit
 from ..config import Settings
 from ..ratelimit import RateLimiter
 from ..store import MailboxCred, MailboxNeedsReconnect, Store
-from . import compose, render, smtp
+from . import compose, inline, render, smtp
 from .hosts import HostNotAllowed
 from .imap import ImapClient, MailAuthError, MailBusy, MailError, SearchQuery
 
@@ -109,12 +109,13 @@ def _audited(exc: ToolError) -> ToolError:
 
 def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
                         opener: Callable = ImapClient.open, sender: Callable = smtp.send,
-                        sessions: Sessions | None = None) -> None:
+                        sessions: Sessions | None = None, fetch_image: Callable = inline.fetch_https) -> None:
     """Each mailbox is opened on the server sealed with its password in the grant (store.MailboxCred), and
     only while that server is still configured: its ports come from the current configuration.
 
     sessions: the per-server session caps, fair queue and IMAP session pool, shared with the sign-in page
-    (app.build_app); one of its own when not given."""
+    (app.build_app); one of its own when not given. fetch_image: how an https <img src> in an HTML body is
+    fetched to embed it (mail/inline.py)."""
     reconnect = f"{settings.product_name} in your AI app"
     manage_url = f"{settings.service_url}/manage"
     configured = {m.host: m for m in settings.mail_servers}
@@ -559,7 +560,8 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
                          mailbox: str | None = None) -> dict[str, Any]:
         """Save a draft in the Drafts folder. New draft: to + subject + text. With reply_to_folder and
         reply_to_uid it is a threaded reply that keeps the original subject with "Re:", so leave `subject`
-        out. Replacing a draft moves the old one to Trash."""
+        out. Replacing a draft moves the old one to Trash. Images in `html` (<img src> with an https URL or a
+        data: URI) are embedded in the message; other image sources are refused."""
         if (reply_to_folder is None) != (reply_to_uid is None):
             raise ToolError("a reply draft needs both reply_to_folder and reply_to_uid")
         if reply_to_folder is not None and subject is not None:
@@ -574,14 +576,15 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         def work(a, cred):
             with imap(a, cred) as c:
                 if reply_to_folder:
-                    m = compose.reply(c.fetch_raw(reply_to_folder, reply_to_uid), a, text, html)
+                    m = compose.reply(c.fetch_raw(reply_to_folder, reply_to_uid), a, text, html,
+                                      fetch=fetch_image)
                     del m["To"]
                     compose._set(m, "To", compose._mailboxes(to, "recipient"))
                     if cc:
                         del m["Cc"]
                         _with_cc(m, cc)
                 else:
-                    m = compose.new(a, to, subject, text, html, cc or ())
+                    m = compose.new(a, to, subject, text, html, cc or (), fetch=fetch_image)
                 drafts = c.special("drafts")
                 if not drafts:
                     drafts = c.ensure_folder("Drafts")
@@ -626,7 +629,8 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         Reply: reply_to_folder + reply_to_uid (goes to the original sender; `to` is not used).
         Forward: forward_folder + forward_uid + to. A reply or forward keeps the original subject ("Re:"/"Fwd:"),
         so `subject` is only for new messages; a forward is plain text, so `html` is not used there either.
-        A copy is saved in Sent. Confirm with the user before sending."""
+        Images in `html` (<img src> with an https URL or a data: URI) are embedded in the message; other image
+        sources are refused. A copy is saved in Sent. Confirm with the user before sending."""
         replying = reply_to_folder is not None or reply_to_uid is not None
         forwarding = forward_folder is not None or forward_uid is not None
         if replying and forwarding:
@@ -658,13 +662,14 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         def work(a, cred):
             with imap(a, cred) as c:
                 if replying:
-                    m = compose.reply(c.fetch_raw(reply_to_folder, reply_to_uid), a, text, html, reply_all)
+                    m = compose.reply(c.fetch_raw(reply_to_folder, reply_to_uid), a, text, html, reply_all,
+                                      fetch=fetch_image)
                     _with_cc(m, cc)
                 elif forwarding:
                     m = compose.forward(c.fetch_raw(forward_folder, forward_uid), a, to, text)
                     _with_cc(m, cc)
                 else:
-                    m = compose.new(a, to, subject, text, html, cc or ())
+                    m = compose.new(a, to, subject, text, html, cc or (), fetch=fetch_image)
                 check_recipients(m, list(bcc or ()))
                 take_send_budget(grant)
                 # Not refunded on failure: an error after DATA may still have delivered the message.

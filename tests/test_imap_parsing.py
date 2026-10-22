@@ -29,6 +29,7 @@ class StubConn:
     def list(self): return self._do("list")
     def status(self, mbox, what): return self._do("status", mbox, what)
     def namespace(self): return self._do("namespace")
+    def capability(self): return self._do("capability")
     def myrights(self, mbox): return self._do("myrights", mbox)
     def select(self, mbox, readonly=False): return self._do("select", mbox, readonly)
     def create(self, mbox): return self._do("create", mbox)
@@ -740,7 +741,19 @@ def test_namespaces_on_a_server_without_namespace_support():
     stub.capabilities = ("IMAP4REV1", "IDLE")           # not advertised: never asked
     assert c.namespaces() == {"personal": [], "other": [], "shared": []}
     assert "namespace" not in [k for k, *_ in stub.calls]
-    stub.capabilities = ("IMAP4REV1", "NAMESPACE")
+    c, stub = client(namespace=bad, list=("OK", LIST_EMPTY), capability=("OK", [b"IMAP4rev1 IDLE"]))
+    stub.capabilities = ("IMAP4REV1", "IDLE")           # not advertised after login either: never asked
+    assert c.namespaces() == {"personal": [], "other": [], "shared": []}
+    assert "namespace" not in [k for k, *_ in stub.calls]
     c2, stub2 = client(namespace=NS_PLESK, list=("OK", LIST_PLESK))
     stub2.capabilities = ("IMAP4REV1", "NAMESPACE")
     assert c2.namespaces()["personal"] == [["INBOX.", "."]]
+
+
+def test_namespace_listed_only_after_login_is_still_used():
+    # Dovecot's greeting lacks NAMESPACE; imaplib keeps that list, so the server is asked again (22 Oct 2026).
+    c, stub = client(namespace=NS_PLESK, list=("OK", LIST_PLESK),
+                     capability=("OK", [b"IMAP4rev1 SASL-IR IDLE NAMESPACE SPECIAL-USE"]))
+    stub.capabilities = ("IMAP4REV1", "SASL-IR", "AUTH=PLAIN")
+    assert c.namespaces()["personal"] == [["INBOX.", "."]]
+    assert c.resolve_folder("mcp-imap-smtp-tests") == "INBOX.mcp-imap-smtp-tests"

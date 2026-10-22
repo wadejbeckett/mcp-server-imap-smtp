@@ -158,6 +158,30 @@ async def test_draft_then_replace_it(live):
 
 
 @pytest.mark.anyio
+async def test_draft_with_images_is_saved_as_multipart_related(live, mailserver):
+    import base64
+    from email import policy
+    from email.parser import BytesParser
+    from tests.test_inline import animated_gif, png
+    srv, addr, _, tag = live
+    t = tag("images")
+    uri = lambda kind, data: f"data:image/{kind};base64," + base64.b64encode(data).decode()
+    html = f'<p>Hello</p><img src="{uri("png", png())}"><img src="{uri("gif", animated_gif())}">'
+    drafts = (await call(srv, "mail_draft", to=[addr], subject=t, text="Hello", html=html))["saved_to"]
+    row = await find(srv, drafts, t)
+    server, address, password = mailserver
+    with ImapClient.open(server, address, password) as c:
+        raw = c.fetch_raw(drafts, row["uid"])
+    m = BytesParser(policy=policy.default).parsebytes(raw)
+    related = next(p for p in m.walk() if p.get_content_type() == "multipart/related")
+    body, *images = related.get_payload()
+    assert [p.get_content_type() for p in images] == ["image/png", "image/gif"]
+    assert images[1].get_content() == animated_gif()
+    for p in images:
+        assert f'src="cid:{p["Content-ID"].strip("<>")}"' in body.get_content()
+
+
+@pytest.mark.anyio
 async def test_search_everywhere_finds_the_sent_copy(live):
     srv, addr, _, tag = live
     t = tag("all")

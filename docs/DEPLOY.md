@@ -22,7 +22,7 @@ The kit lives in `deploy/`:
 
 - Debian 13 (trixie) or Debian 12 (bookworm), nothing else installed. 1 vCPU, 2 GB RAM, 20 GB disk is plenty.
 - A public IPv4 address (IPv6 too if available) and root SSH access with a key.
-- Inbound TCP 22 (or your SSH port), 80 and 443 open in the provider's firewall or security group. Outbound must reach every configured mail server (`[[mail_servers]]` in the config, or the legacy `mail_host`) on its IMAP and SMTP ports, normally 993 and 465. It must also reach DNS on 53 for MX lookups, PyPI on 443 (installs only), Let's Encrypt on 443, and the internet on 443 for client metadata documents (chatgpt.com, claude.ai). Default egress rules allow all of this.
+- Inbound TCP 22 (or your SSH port), 80 and 443 open in the provider's firewall or security group. Outbound must reach every configured mail server (`[[mail_servers]]` in the config, or the legacy `mail_host`) on its IMAP and SMTP ports, normally 993 and 465. It must also reach DNS on 53 for MX lookups, PyPI on 443 (installs only), Let's Encrypt on 443, the internet on 443 for client metadata documents (chatgpt.com, claude.ai), and the internet on 443 for images in HTML mail, which are fetched to embed them (public addresses only). Default egress rules allow all of this.
 
 `install.sh` uses Debian archive packages only: `python3`, `python3-venv`, `nginx`, `certbot`, `ufw`, `unattended-upgrades`, `poppler-utils`, `sqlite3`, `rsync`, `curl`, `openssl`, `ca-certificates`, `iproute2`. Python libraries come from PyPI into a virtualenv, pinned with hashes.
 

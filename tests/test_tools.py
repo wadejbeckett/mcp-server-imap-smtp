@@ -7,8 +7,9 @@ import logging
 import shutil
 import socket
 import subprocess
-from email import message_from_bytes
+from email import message_from_bytes, policy
 from email.message import EmailMessage
+from email.parser import BytesParser
 
 import pytest
 from mcp.server.mcpserver import MCPServer
@@ -151,7 +152,7 @@ def env(tmp_path, monkeypatch):
     return s, store, gid
 
 
-def build(env, fake=None, sender=None):
+def build(env, fake=None, sender=None, fetch_image=None):
     """Server whose opener always hands out `fake`; opened (address, password) pairs go to .opened."""
     s, store, _ = env
     fake = fake or FakeImap()
@@ -161,7 +162,8 @@ def build(env, fake=None, sender=None):
     def opener(server, address, password):
         srv.opened.append((address, password, server.imap_port))
         return fake
-    tools_mod.register_mail_tools(srv, store, s, opener=opener, sender=sender)
+    extra = {"fetch_image": fetch_image} if fetch_image else {}
+    tools_mod.register_mail_tools(srv, store, s, opener=opener, sender=sender, **extra)
     return srv, fake
 
 
@@ -574,6 +576,46 @@ async def test_draft_is_appended_to_drafts_with_draft_flag(env):
     assert (folder, flags) == ("Drafts", ("\\Draft", "\\Seen"))
     assert (m["From"], m["To"], m["Cc"], m["Subject"]) == ("me@x.co.za", "c@x.co.za", "d@x.co.za", "Hi")
     assert out == {"saved_to": "Drafts", "subject": "Hi"}
+
+
+@pytest.mark.anyio
+async def test_draft_with_a_signature_saves_its_images_as_cid_parts(env):
+    from tests.test_inline import ASSETS, CURSOR, SIGNATURE, WORDMARK, gif_frames
+    fetched = []
+    srv, fake = build(env, fetch_image=lambda u: fetched.append(u) or ASSETS[u])
+    await srv.call_tool("mail_draft", {"to": ["c@x.co.za"], "subject": "Hi", "text": "Hello,", "html": SIGNATURE})
+    raw = fake.named("append")[0][2]
+    m = BytesParser(policy=policy.default).parsebytes(raw)
+    assert fetched == [WORDMARK, CURSOR]
+    related = next(p for p in m.walk() if p.get_content_type() == "multipart/related")
+    html, png, gif = related.get_payload()
+    assert (png.get_content_type(), gif.get_content_type()) == ("image/png", "image/gif")
+    body = html.get_content()
+    for part in (png, gif):
+        assert f'src="cid:{part["Content-ID"].strip("<>")}"' in body
+    assert "https://" not in body.replace("https://www.example.org", "")
+    assert gif.get_content() == ASSETS[CURSOR] and gif_frames(gif.get_content()) == 2
+    assert m.get_body(("plain",)).get_content().strip() == "Hello,"
+
+
+@pytest.mark.anyio
+async def test_draft_with_an_image_that_cannot_be_embedded_is_not_saved(env):
+    srv, fake = build(env, fetch_image=lambda u: pytest.fail("http is never fetched"))
+    with pytest.raises(ToolError, match="cannot be embedded"):
+        await srv.call_tool("mail_draft", {"to": ["c@x.co.za"], "subject": "Hi", "text": "t",
+                                           "html": '<img src="http://h.example/a.png">'})
+    assert fake.named("append") == []
+
+
+@pytest.mark.anyio
+async def test_send_embeds_images_in_the_sent_message_and_its_copy(env):
+    from tests.test_inline import ASSETS, SIGNATURE
+    sender = FakeSender()
+    srv, fake = build(env, sender=sender, fetch_image=ASSETS.__getitem__)
+    await srv.call_tool("mail_send", {"to": ["c@x.co.za"], "subject": "Hi", "text": "Hello,", "html": SIGNATURE})
+    for raw in (sender.sent[0]["msg"].as_bytes(), fake.named("append")[0][2]):
+        m = BytesParser(policy=policy.default).parsebytes(raw)
+        assert [p.get_content_type() for p in m.walk() if p.get_content_maintype() == "image"] == ["image/png", "image/gif"]
 
 
 @pytest.mark.anyio
