@@ -1,0 +1,34 @@
+[project]
+name = "mcp-server-imap-smtp"
+version = "0.1.0"
+description = "Remote MCP server that lets AI apps work with IMAP and SMTP mailboxes on the mail servers you bind it to."
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["mcp>=2.1,<3", "cryptography>=42", "html2text>=2024.2", "httpx>=0.27", "uvicorn>=0.30", "dnspython>=2.6"]
+keywords = ["mcp", "imap", "smtp", "email", "oauth"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Communications :: Email",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3"]
+
+[project.scripts]
+mcp-server-imap-smtp = "mcp_server_imap_smtp.app:main"
+mcp-server-imap-smtp-admin = "mcp_server_imap_smtp.cli:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: talks to real mailboxes (credentials from the file named by MCP_TEST_ENV_FILE)"]
+addopts = "-m 'not integration'"

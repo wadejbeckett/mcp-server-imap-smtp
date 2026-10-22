@@ -1,0 +1,74 @@
+# mcp-server-imap-smtp production configuration: /etc/@NAME@/config.toml (root:@NAME@ 0640).
+# install.sh writes this file from deploy/config.prod.toml.template only when it does not exist;
+# later installs never overwrite it, so edit it in place and `systemctl restart @NAME@`.
+# Every key and its default: docs/RUNNING.md, "Configuration reference". It holds no secrets.
+
+issuer_url = "https://@MCP_HOSTNAME@"
+mail_resource_url = "https://@MCP_HOSTNAME@/mail"
+db_path = "/var/lib/@NAME@/mcp-server-imap-smtp.sqlite"
+
+# Names and support contacts shown on the sign-in page, in error messages and to the AI app.
+# Replace these before anyone signs in.
+operator_name = "Example Hosting"
+product_name = "Example Mail"
+support_url = "https://www.example.com/support"
+support_email = "support@example.com"
+
+# Loopback only; nginx on the same host terminates TLS and proxies to this address.
+listen_host = "127.0.0.1"
+listen_port = 8765
+
+# nginx overwrites X-Forwarded-For with the real client address. Trusting it from 127.0.0.1 only
+# lets the sign-in and registration rate limits key on each user's own IP instead of nginx's.
+trusted_proxy = true
+forwarded_allow_ips = "127.0.0.1"
+
+# true: also accept http://127.0.0.1, http://localhost and http://[::1] redirect URIs (any port),
+# which Claude Code, MCP Inspector and other desktop clients use. The authorisation code is
+# delivered to the user's own machine and PKCE still applies, so a remote party cannot collect it;
+# the residual risk is a program already running on the user's computer. false limits sign-in to
+# web-based AI apps and breaks those clients.
+allow_loopback_redirects = true
+
+# Rate limits on the anonymous OAuth endpoints, per client IP per login_window (900 s; HTTP 429 with
+# Retry-After 900 beyond them). claude.ai and ChatGPT call /register and /token from their platform's
+# shared backend addresses, so every user of one platform shares each budget: the code defaults
+# (30 and 120) would stop an office of more than 30 Claude users onboarding within 15 minutes, and
+# each connected user's hourly token refresh counts against /token. /authorize comes from each user's
+# browser (about two requests per sign-in), so an office behind one NAT address shares that budget.
+# Raise these before a larger onboarding (docs/DEPLOY.md, "Rate limits"). Unused registrations are
+# purged after 7 days.
+register_limit = 300
+token_limit = 1200
+authorize_limit = 120
+
+# Sending (docs/RUNNING.md): "send" offers mail_send and mail_draft; AI apps ask the user to approve each
+# message. The per-connection caps send_hourly_limit, send_daily_limit and send_max_recipients are off
+# (0) unless set here; the mail server's own outgoing limits still apply. "draft_only" saves drafts and
+# never sends; "off" removes both tools. Connections may hold any number of mailboxes (max_mailboxes = 0).
+send_mode = "send"
+
+# Mail server sessions (docs/RUNNING.md, "Mail server sessions"). Every user reaches the mail servers from
+# this server's one address. Each server's max_sessions (below) caps the IMAP and SMTP sessions open on it
+# at once, for all users together; further calls queue fairly per connection and get "mail server busy"
+# after 30 s. Keep max_sessions_per_mailbox below Dovecot's mail_max_userip_connections (10 by default).
+# A logged-in IMAP session is reused for imap_idle_seconds, and never once imap_max_session_age has
+# passed since its login (a changed password takes effect within that).
+max_sessions_per_mailbox = 4
+imap_idle_seconds = 60
+imap_max_session_age = 300
+
+# Mail servers the connector may sign in to (docs/RUNNING.md, "Mail servers"). An address whose domain
+# matches none of them is refused before any password is tried. These tables stay at the end: TOML puts
+# every key after a [[mail_servers]] line into that table. This server needs outbound access to each
+# host on 993 and 465 (install.sh opens exactly those), and each mail server must not block this
+# server's address for failed logins (docs/DEPLOY.md).
+[[mail_servers]]
+host = "mail.example.com"
+match_mx = true                  # every domain whose MX is this host or a name under it
+max_sessions = 8                 # IMAP and SMTP sessions open on this server at once, all users together
+
+[[mail_servers]]
+host = "mail.client.example"
+domains = ["client.example"]     # exact domains or "*.suffix", matched before MX
+max_sessions = 16

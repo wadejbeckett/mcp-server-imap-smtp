@@ -1,0 +1,28 @@
+# Copy to local.toml for development. Production: deploy/config.prod.toml.template
+# Every key and its default: docs/RUNNING.md, "Configuration reference".
+issuer_url = "http://127.0.0.1:8765"
+mail_resource_url = "http://127.0.0.1:8765/mail"
+db_path = "./mcp-server-imap-smtp.sqlite"
+
+# Names and support contacts shown to users.
+operator_name = "Example Hosting"
+product_name = "Example Mail"
+support_url = "https://www.example.com/support"
+support_email = "support@example.com"
+
+# Only for a database with mailboxes connected before servers were recorded with each password:
+# the configured server they sign in to. Unset with one server: that server. Unset with several:
+# those mailboxes must reconnect.
+# legacy_mail_host = "mail.example.com"
+
+# The mail servers the connector may sign in to. Keep top-level keys above the first table.
+# One server with no DNS lookups: delete the tables and set mail_host = "mail.example.com" instead.
+[[mail_servers]]
+host = "mail.example.com"        # imap_port and smtp_port default to 993 and 465
+match_mx = true                  # serve any domain whose MX is this host or a name under it
+max_sessions = 8                 # IMAP and SMTP sessions open on this server at once, all users together
+
+[[mail_servers]]
+host = "mail.client.example"
+domains = ["client.example"]     # exact domains or "*.suffix"; matched before MX
+match_mx = false

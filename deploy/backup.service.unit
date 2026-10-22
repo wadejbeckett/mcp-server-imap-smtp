@@ -1,0 +1,15 @@
+# Nightly online backup of the @NAME@ database (deploy/backup.sh). Triggered by @NAME@-backup.timer.
+[Unit]
+Description=@NAME@ database backup
+After=@NAME@.service
+
+[Service]
+Type=oneshot
+Environment=NAME=@NAME@
+ExecStart=/usr/local/sbin/@NAME@-backup
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full

@@ -1,0 +1,52 @@
+# mcp-server-imap-smtp gateway. Rendered into /etc/systemd/system/@NAME@.service by deploy/install.sh,
+# which overwrites it on every run; put local overrides in `systemctl edit @NAME@`.
+[Unit]
+Description=@NAME@ gateway (remote MCP for IMAP/SMTP mailboxes)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=@NAME@
+Group=@NAME@
+# One process only: rate limits and the client-metadata cache live in memory (docs/RUNNING.md).
+ExecStart=/opt/@NAME@/venv/bin/mcp-server-imap-smtp --config /etc/@NAME@/config.toml
+WorkingDirectory=/var/lib/@NAME@
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+UMask=0077
+
+# Sandbox. Writable: the state directory only. Allowed: outbound TCP (IMAPS/SMTPS to the mail host,
+# HTTPS for client metadata documents), the loopback listener, and the pdftotext child process.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/@NAME@
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+LockPersonality=yes
+# Verified with Debian 12 (CPython 3.11) and Debian 13 (CPython 3.13): cryptography's Rust
+# bindings, sqlite3, ssl and pdftotext do not need writable+executable memory.
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
