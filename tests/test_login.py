@@ -817,3 +817,17 @@ def test_service_at_the_site_root_has_no_redirects(tmp_path):
     paths = sorted({r.path for r in login_routes(GatewayProvider(s, Store(s.db_path)), RES, verifier,
                                                 RateLimiter(5, 900), s)})
     assert paths == ["/login", "/manage"] and s.service_url == "http://127.0.0.1:8765"
+
+
+def test_an_untrusted_mail_server_certificate_is_logged(caplog, monkeypatch):
+    err = ssl.SSLCertVerificationError(1, "certificate verify failed")
+    err.verify_message = "unable to get local issuer certificate"
+
+    def boom(*a, **k):
+        raise err
+    monkeypatch.setattr(login_mod.ImapClient, "open", classmethod(lambda cls, *a, **k: boom()))
+    caplog.set_level("WARNING")
+    with pytest.raises(MailUnavailable):
+        imap_verifier("me@x.co.za", "s3cret-pw", MAIL1)
+    assert "could not reach mail1.hosting.example: unable to get local issuer certificate" in caplog.text
+    assert "s3cret-pw" not in caplog.text and "me@x.co.za" not in caplog.text

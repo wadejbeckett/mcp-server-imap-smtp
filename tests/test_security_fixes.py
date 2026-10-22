@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Security review fixes of 20 October 2026 (docs/security-review-2026-10-20.md, findings 1-3, 7, 8, 12)."""
+"""Regression tests for hardening: sign-in limits, registration limits, replay, outages and sending controls."""
 from __future__ import annotations
 
 import imaplib
@@ -34,7 +34,7 @@ def settings(tmp_path, **kw):
                     mail_servers=(MAIL1,), db_path=tmp_path / "s.sqlite", **kw)
 
 
-# --- finding 1: IPv6 clients are one /64; per-host, daily and per-page caps --------------------------
+# --- IPv6 clients are one /64; per-host, daily and per-page caps --------------------------
 
 @pytest.mark.parametrize("host,key", [
     ("2001:db8:1:2:aaaa::1", "2001:db8:1:2::/64"),
@@ -109,7 +109,7 @@ def test_one_sign_in_page_allows_only_a_few_wrong_passwords(tmp_path):
     assert codes == [200, 200, 429]
 
 
-# --- finding 7: a wrong first password does not lock the other mailboxes on the form ------------------
+# --- a wrong first password does not lock the other mailboxes on the form ------------------
 
 def test_untried_mailboxes_keep_their_budget(tmp_path):
     app, pending, limits = login_env(tmp_path, lambda a, p, s: a == "b@x.example", login_failures=2,
@@ -121,7 +121,7 @@ def test_untried_mailboxes_keep_their_budget(tmp_path):
     assert limits.window.blocked("addr:a@x.example")
 
 
-# --- finding 3: registration size and type limits ----------------------------------------------------
+# --- registration size and type limits ----------------------------------------------------
 
 def client_info(**kw):
     return OAuthClientInformationFull(**{"client_id": "c", "redirect_uris": [AnyUrl(CB)],
@@ -163,7 +163,7 @@ def test_register_overall_cap(tmp_path):
     assert codes == [201, 201, 429]
 
 
-# --- finding 8: refresh-token and code replay end the grant ------------------------------------------
+# --- refresh-token and code replay end the grant ------------------------------------------
 
 def test_refresh_replay_after_grace_revokes_the_grant(tmp_path, monkeypatch):
     s = Store(tmp_path / "s.sqlite")
@@ -186,7 +186,7 @@ def test_wrong_secret_is_not_a_replay(tmp_path):
     assert s.load_token(at2, "access") is not None
 
 
-# --- finding 12: a temporary IMAP failure is not a wrong password ------------------------------------
+# --- a temporary IMAP failure is not a wrong password ------------------------------------
 
 class _NoConn:
     def __init__(self, text):
@@ -222,7 +222,7 @@ def test_login_failure_classification(monkeypatch, text, exc):
         imap_mod.ImapClient.open(MAIL1, "me@x.example", "pw")
 
 
-# --- finding 2: send mode, budgets, recipients and Bcc -----------------------------------------------
+# --- send mode, budgets, recipients and Bcc -----------------------------------------------
 
 def send_env(tmp_path, monkeypatch, **kw):
     s = settings(tmp_path, **kw)

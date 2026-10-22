@@ -8,7 +8,9 @@ import base64
 import functools
 import imaplib
 import inspect
+import logging
 import shutil
+import ssl
 import subprocess
 import threading
 from datetime import date
@@ -29,6 +31,8 @@ from ..store import MailboxCred, MailboxNeedsReconnect, Store
 from . import compose, render, smtp
 from .hosts import HostNotAllowed
 from .imap import ImapClient, MailAuthError, MailBusy, MailError, SearchQuery
+
+log = logging.getLogger(__name__)
 from .sessions import ServerBusy, Sessions
 
 READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=False)
@@ -186,6 +190,9 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         if isinstance(exc, (MailError, HostNotAllowed, IndexError, ValueError)):
             text = str(exc)
             return "error", "The request was refused." if password in text else text
+        if isinstance(exc, ssl.SSLCertVerificationError):
+            log.warning("mail server certificate not trusted: %s", getattr(exc, "verify_message", None) or exc)
+            return "network", "The mail server's certificate could not be verified. Tell the connector's operator."
         if isinstance(exc, OSError):
             return "network", f"Could not reach the mail server ({exc.__class__.__name__}). Try again shortly."
         if isinstance(exc, imaplib.IMAP4.error):

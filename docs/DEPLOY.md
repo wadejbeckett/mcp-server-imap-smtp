@@ -1,6 +1,6 @@
 # Deploying mcp-server-imap-smtp to production
 
-How to put the gateway on its own Debian server at, for example, `https://mcp.example.com/mail`, keep it updated, back it up and remove it. Run it on a dedicated server rather than on a mail server: every user's IMAP and SMTP sign-ins then come from one known address, and the gateway's firewall and sandbox are not shared with anything else. The gateway serves one path per service on the same host: mail is the first at `/mail`, and later services can be added as further paths on the same host without a new name, certificate or server. Local development and the configuration reference are in [RUNNING.md](RUNNING.md).
+How to put the gateway on its own Debian server at, for example, `https://mcp.example.com/mail`, keep it updated, back it up and remove it. Run it on a dedicated server rather than on a mail server: every user's IMAP and SMTP sign-ins then come from one known address, and the gateway's firewall and sandbox are not shared with anything else. The connector lives under a path (`/mail`), so the rest of the host stays free. Install one copy per server: the nginx site claims the default server and fixed upstream and log names. Local development and the configuration reference are in [RUNNING.md](RUNNING.md).
 
 The kit lives in `deploy/`:
 
@@ -288,6 +288,7 @@ journalctl --rotate && journalctl --vacuum-time=1s   # drops ALL archived journa
 ## 13. Troubleshooting
 
 - **certbot fails:** `dig +short mcp.example.com` must return the server's address (DNS only, not proxied) and `curl -I http://mcp.example.com/.well-known/acme-challenge/x` from outside must reach the server (a 404 from nginx is fine). Fix and re-run `install.sh`.
+- **Sign-in says the mail server could not be reached, for one server only:** `journalctl -u <NAME> | grep 'could not reach'` shows the reason. A certificate problem ("unable to get local issuer certificate", a hostname mismatch) means the mail server's certificate is not trusted for the configured `host`; see RUNNING.md, "Mail servers with a private certificate authority".
 - **Gateway does not start:** `journalctl -u mcp-server-imap-smtp -n 50`. `install.sh` prints the same log when its 30-second health check fails.
 - **Everyone gets 429 at sign-in:** check `trusted_proxy = true` and `forwarded_allow_ips = "127.0.0.1"`; without them all users share nginx's address.
 - **Sign-in fails for every user of one mail server with a correct password:** run the go-live check in section 6, step 6, from the gateway. A timeout means the mail server or a firewall in front of it is dropping the gateway: check the reputation allow list first (for example Imunify360's white list), then login-failure blocking (fail2ban or the control panel's IP banning), then any firewall allowlist (section 6a). If the server's address changed, re-run `install.sh` so the outbound firewall allows the new address.

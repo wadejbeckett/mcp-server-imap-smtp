@@ -205,6 +205,10 @@ def imap_verifier(address: str, password: str, server: MailServer) -> bool:
     except MailBusy as exc:
         raise MailboxBusy("mailbox busy") from exc
     except (MailError, OSError, ssl.SSLError) as exc:   # outage: not the person's fault, must not count
+        # The operator needs the reason (a certificate the system does not trust shows up here); never the
+        # password, which no exception from connecting can hold before login, and never the address.
+        reason = getattr(exc, "verify_message", None) or exc.__class__.__name__
+        log.warning("sign-in check: could not reach %s: %s", server.host, reason)
         raise MailUnavailable("mail server unavailable") from exc
 
 

@@ -158,6 +158,10 @@ else
 fi
 chown root:"$SERVICE_USER" "$CONFIG"
 chmod 0640 "$CONFIG"
+if grep -qE '"(Example Hosting|Example Mail)"|"mail\.(example\.com|client\.example)"' "$CONFIG"; then
+    warn "$CONFIG still has the template's example names or mail servers: set operator_name, product_name, the support"
+    warn "contacts and [[mail_servers]] to your own, then systemctl restart $NAME (docs/DEPLOY.md, section 4)"
+fi
 
 # Validated with the NEW release's code, before it becomes active.
 mapfile -t CFG < <(runuser -u "$SERVICE_USER" -- "$REL/venv/bin/python" - "$CONFIG" <<'PY'
@@ -232,7 +236,7 @@ fi
 ufw --force enable >/dev/null
 log "ufw: allowing tcp ${ssh_ports[*]} (ssh), 80, 443 in"
 
-# SSH: keys only, no forwarding (security review 2026-10-20, finding 5). Skipped with SSH_HARDEN=0.
+# SSH: keys only, no forwarding. Skipped with SSH_HARDEN=0.
 # The drop-in is read before sshd_config, so its values win; it is removed again if sshd rejects it.
 SSHD_DROPIN=/etc/ssh/sshd_config.d/10-$NAME.conf
 if [[ ${SSH_HARDEN:-1} == 1 && -d /etc/ssh/sshd_config.d ]] && command -v sshd >/dev/null; then

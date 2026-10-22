@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Build an mcp-server-imap-smtp deployment bundle on the workstation.
 #
-#   cd <repo>/MCP/hosted && deploy/build.sh
+#   cd <repository> && deploy/build.sh
 #
 # Produces deploy/dist/mcp-server-imap-smtp-<release>.tar.gz containing:
 #   - the mcp_server_imap_smtp wheel (pure Python, built from src/ in a clean copy),

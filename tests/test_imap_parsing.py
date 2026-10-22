@@ -728,3 +728,19 @@ def test_search_in_the_other_schemes_sent_selects_this_servers_sent():
     c, stub = client(namespace=NS_EMPTY_DOT, list=("OK", LIST_ISPCONFIG_ROLES), **{"uid SEARCH": ("OK", [None])})
     assert c.search("INBOX.Sent", SearchQuery()) == (0, [])
     assert [a for k, a, _ in stub.calls if k == "select"] == [('"Sent"', True)]
+
+
+def test_namespaces_on_a_server_without_namespace_support():
+    # GreenMail and other small servers answer NAMESPACE with BAD (clean-room test, 22 Oct 2026).
+    def bad():
+        raise imaplib.IMAP4.error("BAD unknown command")
+    c, _ = client(namespace=bad, list=("OK", LIST_EMPTY))
+    assert c.namespaces() == {"personal": [], "other": [], "shared": []}
+    c, stub = client(namespace=bad, list=("OK", LIST_EMPTY))
+    stub.capabilities = ("IMAP4REV1", "IDLE")           # not advertised: never asked
+    assert c.namespaces() == {"personal": [], "other": [], "shared": []}
+    assert "namespace" not in [k for k, *_ in stub.calls]
+    stub.capabilities = ("IMAP4REV1", "NAMESPACE")
+    c2, stub2 = client(namespace=NS_PLESK, list=("OK", LIST_PLESK))
+    stub2.capabilities = ("IMAP4REV1", "NAMESPACE")
+    assert c2.namespaces()["personal"] == [["INBOX.", "."]]

@@ -361,7 +361,16 @@ class ImapClient:
         return {"messages": int(nums.get(b"MESSAGES", 0)), "unseen": int(nums.get(b"UNSEEN", 0))}
 
     def namespaces(self) -> dict:
-        typ, data = self.c.namespace()
+        """The server's namespaces (RFC 2342). A server without NAMESPACE has one personal namespace with no
+        prefix, which is what an empty answer means here."""
+        empty = {"personal": [], "other": [], "shared": []}
+        caps = getattr(self.c, "capabilities", None)
+        if caps is not None and "NAMESPACE" not in {str(c).upper() for c in caps}:
+            return empty
+        try:
+            typ, data = self.c.namespace()
+        except imaplib.IMAP4.error:          # BAD from a server that does not support it after all
+            return empty
         if typ != "OK" or not data or not data[0]:
             return {"personal": [], "other": [], "shared": []}
         try:
@@ -389,10 +398,7 @@ class ImapClient:
         if name.upper() == "INBOX":
             return name
         if self._ns is None:
-            try:
-                self._ns = self.namespaces()
-            except imaplib.IMAP4.error:  # no NAMESPACE support: no prefix
-                self._ns = {"personal": [], "other": [], "shared": []}
+            self._ns = self.namespaces()
         if any(p and name.startswith(p) for p, _ in self._ns["other"] + self._ns["shared"]):
             return name
         names = {f.name for f in self.folders()}

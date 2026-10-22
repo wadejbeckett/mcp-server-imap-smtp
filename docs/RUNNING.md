@@ -62,12 +62,14 @@ Both use loopback redirect URIs, which need `allow_loopback_redirects = true` (t
 .venv/bin/mcp-server-imap-smtp-admin --config local.toml grants revoke --grant <grant id>
 .venv/bin/mcp-server-imap-smtp-admin --config local.toml grants revoke --mailbox user@example.com
 .venv/bin/mcp-server-imap-smtp-admin --config local.toml grants revoke --host mail.example.com
+.venv/bin/mcp-server-imap-smtp-admin --config local.toml grants add-mailboxes <grant id> --subject <main mailbox> < lines.txt
 ```
 
 - `servers list` prints each configured mail server: host, IMAP and SMTP ports, `domains` and whether `match_mx` is on. It reads only the configuration.
-- `grants list` prints one line per grant: id, creation time, `active` or `revoked`, and each mailbox address followed by its mail server in brackets. Mailboxes connected before servers were recorded show the first configured server. It never prints passwords, tokens or keys.
+- `grants list` prints one line per grant: id, creation time, `active` or `revoked`, and each mailbox address followed by its mail server in brackets. Mailboxes connected before servers were recorded show the `legacy_mail_host` server, the only server when there is one, or otherwise "unknown server". It never prints passwords, tokens or keys.
 - `grants revoke --grant ID` revokes one grant; `--mailbox ADDRESS` (case-insensitive) revokes every grant that includes that mailbox; `--host HOST` revokes every grant with a mailbox on that mail server. All three delete the grant's tokens and codes, so the client must sign in again. Output is `revoked N`, counting only grants that were still active; `0` means nothing matched or it was already revoked.
-- The CLI works on the database directly and can run while the server is up. `--config` defaults to `local.toml` in the current directory. If `db_path` does not exist it stops with exit status 2 instead of creating an empty database.
+- `grants add-mailboxes GRANT --subject MAIN` adds mailboxes to an existing connection without the user reconnecting: the operator's version of the manage page. It reads "address password" lines from stdin, or asks for them without echo on a terminal. `--subject` must be the connection's main mailbox, and the connection is printed before anything is checked. Each new mailbox is checked on its server over IMAP; mailboxes already present are skipped; checking stops after 5 wrong passwords; nothing is saved unless every line passes. Each addition writes an `admin_add_mailbox` audit line to syslog. A connection created by an older version is refused until its AI app has used it once. Keep the input file readable only by you and delete it afterwards (`shred -u`).
+- The CLI works on the database directly and can run while the server is up. `--config` defaults to `$MCP_SERVER_IMAP_SMTP_CONFIG`, or `local.toml` in the current directory (the server's `--config` works the same way). If `db_path` does not exist it stops with exit status 2 instead of creating an empty database.
 
 ## Configuration reference
 
@@ -128,7 +130,7 @@ Each `[[mail_servers]]` table describes one server:
 | `host` | required | Host name the connector connects to. The TLS certificate must be valid for this exact name; there is no fallback name. |
 | `imap_port` | top-level `imap_port` (993) | IMAP over TLS. |
 | `smtp_port` | top-level `smtp_port` (465) | SMTP over TLS. |
-| `domains` | `[]` | Mail domains this server serves: exact names (`client.example`) or `*.suffix` wildcards. |
+| `domains` | `[]` | Mail domains this server serves: exact names (`client.example`) or `*.suffix` wildcards (every subdomain, not the suffix itself). `"*"` alone sends every address that no other rule matched to this server, including addresses at domains you do not host: their owners' passwords would then be tried on your server. Use it only for a private deployment where every user is yours. |
 | `max_sessions` | `8` | IMAP and SMTP sessions the connector holds open on this server at once, for all users together, kept sessions included (see "Mail server sessions"). At least 2: `mail_send` holds one of each. Raise it for a server that is close to the connector or built for many connections. |
 | `match_mx` | `true` | Also serve any domain whose MX points at this server, by name or by address. By name: with `host = "mail.example.net"`, a domain whose MX is `mail.example.net` or `mx1.mail.example.net` matches. By address: a domain whose MX host (for example `mail.client.example`, as some control panels such as Plesk publish for every domain) has an A or AAAA address that `host` also has matches. A domain whose MX is elsewhere does not. |
 
@@ -146,7 +148,7 @@ The connector runs mail work in its own threads, as many as the servers' `max_se
 
 ### Many mailboxes in one connection
 
-A business owner can connect every staff mailbox in one sign-in: the main address and password, then one mailbox per line in "Add more mailboxes" (address, whitespace, password; blank lines are skipped and the password is the rest of the line, trimmed). Each mailbox is checked with its own address and password on its own server, so nothing changes on the mail servers.
+A business owner can connect every staff mailbox in one sign-in by pasting the whole list into the "Several mailboxes" box, one mailbox per line (address, whitespace, password; blank lines are skipped and the password is the rest of the line, trimmed). The email and password fields above it may then stay empty; the first line becomes the main mailbox. Later changes go through the manage page (`<mail URL>/manage`): the main mailbox signs in there and can add mailboxes, enter new passwords, remove mailboxes or disconnect, without the AI app reconnecting. Each mailbox is checked with its own address and password on its own server, so nothing changes on the mail servers.
 
 - **Form size.** The whole form may be at most 2 MB (HTTP 413 beyond it), the same as nginx's `client_max_body_size`.
 - **Order of checks.** The list is validated first; a bad line is named by its number ("Line 12: ...") and never quoted, since it may hold a password. Each domain is then resolved once, four domains at a time per sign-in; the first domain not hosted here or a DNS failure stops the rest. Then the main mailbox's password is checked on its own, and only if it is right are the listed passwords checked, eight at a time per sign-in and at most 32 at a time for all sign-ins together (a private thread pool, so sign-ins never hold up tool calls). Each check is an IMAP login, so it also takes its turn under its server's session cap ("Mail server sessions"); if no session comes free within the sign-in's time budget, nothing is connected and the page says the check took too long.
@@ -217,6 +219,8 @@ These steps need real test mailboxes on a mail server you operate and, for the l
    MCP_TEST_SHARED_PASSWORD=...
    ```
 
+While testing sign-in by hand, wrong passwords and refused domains count against `login_failures` (5 per 15 minutes per client address); raise it in `local.toml` for a test session rather than waiting out a lockout.
+
 3. Run `MCP_TEST_ENV_FILE=~/.config/mcp-imap-smtp-test.env .venv/bin/pytest -m integration`. Without `MCP_TEST_IMAP_HOST`, `MCP_TEST_ADDRESS` and `MCP_TEST_PASSWORD` the tests skip, and the shared-mailbox tests skip without the shared pair. They only use the folder `mcp-imap-smtp-tests`, tag subjects `mcp-imap-smtp-test <ns>`, send only to the test address itself, never touch untagged messages and never expunge; tagged leftovers end up in `mcp-imap-smtp-tests` or Trash.
 
 ### Manual checklist (local server, Claude Code)
@@ -228,7 +232,7 @@ Run the server locally, connect Claude Code as above and sign in with the test m
 3. Flag a message, then move one to Trash.
 4. Save a draft.
 5. Send a mail to the test address itself and confirm it appears in Sent.
-6. Reconnect, open "Add more mailboxes" on the same sign-in form and add the shared mailbox as one line (address, a space, password), then search the shared mailbox (pass it as `mailbox`). A second, separate sign-in would create a separate connection instead.
+6. Open `http://127.0.0.1:8765/mail/manage`, sign in with the test mailbox and add the shared mailbox as one line (address, a space, password). Then, without reconnecting, search the shared mailbox (pass it as `mailbox`).
 7. Change the mailbox password on the mail server and confirm the next call asks you to reconnect (the grant is revoked on the failed login).
 
 ### claude.ai and ChatGPT web
@@ -240,12 +244,13 @@ Then:
 - claude.ai: Settings, Connectors, Add custom connector, paste `https://<host>/mail`.
 - ChatGPT: enable developer mode, then create a custom MCP connector and paste the URL. Which ChatGPT plans allow write tools changes over time; check OpenAI's current documentation.
 
-## Paths: gateway-level and per service
+## Paths
 
-One gateway host can carry several services, each at its own path (`/<service>`):
+- **At the site root:** the OAuth authorisation server's endpoints `/authorize`, `/token`, `/register`, `/revoke`, and the metadata `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/<path>`. AI apps discover these from the metadata.
+- **Under `mail_resource_url`'s path (`/mail` in the examples):** the MCP endpoint itself, the sign-in page `/mail/login` and the manage page `/mail/manage`. `/login` and `/manage` at the root redirect there (308), so links in a user guide may use either.
 
-- **Gateway level (site root, shared by every service):** the OAuth authorisation server's endpoints `/authorize`, `/token`, `/register`, `/revoke`, and the metadata `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/<service>`. AI apps discover these from the metadata and hold them for live connections, so they stay at the root.
-- **Per service (under `mail_resource_url`'s path, `/mail` here):** the MCP endpoint `/mail`, the sign-in page `/mail/login` and the manage page `/mail/manage`.
-- **Old paths:** earlier versions served the pages at `/login` and `/manage`. Those paths answer with a permanent redirect (308, which keeps a POST a POST) to their place under the service path, so a sign-in in flight and a manage link already sent keep working.
+Mounting the connector under a path leaves the rest of the host free for other services. Set `mail_resource_url` to the site root to give it the whole host.
 
-A second service mounts at its own path (for example `/calendar`) with its own pages under it, and shares the root endpoints.
+## Mail servers with a private certificate authority
+
+The connector verifies every mail server's TLS certificate against the system's trusted CAs and the configured `host` name. For a server whose certificate comes from your own CA, add the CA to the system store (Debian: copy the PEM file to `/usr/local/share/ca-certificates/<name>.crt`, run `update-ca-certificates`, then restart the service). A certificate the connector does not trust makes sign-in say the mail server could not be reached; the log says why ("could not reach mail.example.com: unable to get local issuer certificate").
