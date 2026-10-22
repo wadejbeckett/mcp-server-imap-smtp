@@ -71,10 +71,12 @@ if [[ ! $KEEP_RELEASES =~ ^[0-9]+$ ]] || (( KEEP_RELEASES < 2 )); then die "KEEP
 [[ -z $SSH_PORT || $SSH_PORT =~ ^[0-9]+$ ]] || die "SSH_PORT must be a port number"
 
 # --- 1. Preflight -------------------------------------------------------------------------------
-. /etc/os-release
-if [[ ${ID:-} != debian || ! ${VERSION_ID:-} =~ ^(12|13)$ ]]; then
-    [[ ${ALLOW_UNSUPPORTED_OS:-0} == 1 ]] || die "supported: Debian 12 or 13 (found ${PRETTY_NAME:-unknown}); ALLOW_UNSUPPORTED_OS=1 to try anyway"
-    warn "unsupported OS ${PRETTY_NAME:-unknown}; continuing because ALLOW_UNSUPPORTED_OS=1"
+# Read in a subshell: os-release sets NAME (and other variables) that would overwrite ours.
+os_field() { (. /etc/os-release && eval "printf '%s' \"\${$1:-}\""); }
+OS_ID="$(os_field ID)"; OS_VERSION_ID="$(os_field VERSION_ID)"; OS_PRETTY="$(os_field PRETTY_NAME)"
+if [[ $OS_ID != debian || ! $OS_VERSION_ID =~ ^(12|13)$ ]]; then
+    [[ ${ALLOW_UNSUPPORTED_OS:-0} == 1 ]] || die "supported: Debian 12 or 13 (found ${OS_PRETTY:-unknown}); ALLOW_UNSUPPORTED_OS=1 to try anyway"
+    warn "unsupported OS ${OS_PRETTY:-unknown}; continuing because ALLOW_UNSUPPORTED_OS=1"
 fi
 
 for f in BUILD_INFO SHA256SUMS requirements.lock service.unit backup.service.unit \
