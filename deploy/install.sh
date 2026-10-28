@@ -19,6 +19,7 @@
 #   SSH_PORT       extra SSH port to allow in ufw. The ports sshd listens on and the port of the current
 #                  SSH session are always allowed, so the firewall cannot lock you out.
 #   JOURNAL_RETENTION, JOURNAL_MAX   journald retention (default 30day and 500M; audit lines are personal data).
+#   UPGRADE_REBOOT_TIME  e.g. 02:00: let unattended-upgrades reboot then when an update needs it (default: never).
 #   KEEP_RELEASES  installed releases to keep under /opt/$NAME/releases (default 3, minimum 2).
 #
 # Layout:
@@ -106,7 +107,7 @@ log "Installing Debian packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q --no-install-recommends \
-    python3 python3-venv nginx certbot ufw unattended-upgrades poppler-utils sqlite3 rsync \
+    python3 python3-venv nginx certbot ufw unattended-upgrades needrestart poppler-utils sqlite3 rsync \
     ca-certificates curl openssl iproute2
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || die "python3 >= 3.11 required ($(python3 -V))"
 
@@ -292,6 +293,23 @@ APT::Periodic::Unattended-Upgrade "1";
 EOF
 mv -f "$AUTO_UPGRADES.new" "$AUTO_UPGRADES"
 systemctl enable --quiet apt-daily.timer apt-daily-upgrade.timer || warn "could not enable apt timers"
+# Security updates restart the services that use the updated libraries (needrestart, automatic mode), so a
+# patched OpenSSL or Python is in use straight away. A new kernel still needs a reboot; set
+# UPGRADE_REBOOT_TIME=02:00 to let unattended-upgrades reboot at that time when one is required.
+NEEDRESTART_CONF=/etc/needrestart/conf.d/50-$NAME.conf
+if [[ -d /etc/needrestart/conf.d ]]; then
+    printf '# Written by %s install.sh. Remove this file to reverse.\n$nrconf{restart} = '"'"'a'"'"';\n' "$NAME" > "$NEEDRESTART_CONF"
+    log "needrestart: services restart automatically after updates ($NEEDRESTART_CONF)"
+else
+    warn "needrestart has no conf.d; services are not restarted after security updates"
+fi
+REBOOT_CONF=/etc/apt/apt.conf.d/52$NAME-reboot
+if [[ -n ${UPGRADE_REBOOT_TIME:-} ]]; then
+    [[ $UPGRADE_REBOOT_TIME =~ ^[0-2][0-9]:[0-5][0-9]$ ]] || die "UPGRADE_REBOOT_TIME must look like 02:00"
+    printf '// Written by %s install.sh. Remove this file to reverse.\nUnattended-Upgrade::Automatic-Reboot "true";\nUnattended-Upgrade::Automatic-Reboot-Time "%s";\n' \
+        "$NAME" "$UPGRADE_REBOOT_TIME" > "$REBOOT_CONF"
+    log "unattended-upgrades: reboots at $UPGRADE_REBOOT_TIME when an update needs it ($REBOOT_CONF)"
+fi
 
 # Journal retention: audit lines hold mailbox addresses and folder names (personal data), so the journal
 # keeps 30 days and at most 500 MB (JOURNAL_RETENTION and JOURNAL_MAX to change). Remove the file and

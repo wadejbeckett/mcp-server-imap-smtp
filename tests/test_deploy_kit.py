@@ -17,3 +17,9 @@ def test_unit_is_tightened():
 def test_install_renders_the_listen_port_into_units():
     assert 's/@LISTEN_PORT@/$LISTEN_PORT/g' in (DEPLOY / "install.sh").read_text().split("render() {")[1].split("\n")[0]
     subprocess.run(["bash", "-n", str(DEPLOY / "install.sh")], check=True)
+
+
+def test_security_updates_restart_services():
+    install = (DEPLOY / "install.sh").read_text()
+    assert " needrestart " in install and "$nrconf{restart}" in install
+    assert "Unattended-Upgrade::Automatic-Reboot" in install
