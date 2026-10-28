@@ -18,6 +18,7 @@
 #   SSH_HARDEN=0   do not write the sshd drop-in (keys only, no forwarding).
 #   SSH_PORT       extra SSH port to allow in ufw. The ports sshd listens on and the port of the current
 #                  SSH session are always allowed, so the firewall cannot lock you out.
+#   JOURNAL_RETENTION, JOURNAL_MAX   journald retention (default 30day and 500M; audit lines are personal data).
 #   KEEP_RELEASES  installed releases to keep under /opt/$NAME/releases (default 3, minimum 2).
 #
 # Layout:
@@ -279,6 +280,25 @@ APT::Periodic::Unattended-Upgrade "1";
 EOF
 mv -f "$AUTO_UPGRADES.new" "$AUTO_UPGRADES"
 systemctl enable --quiet apt-daily.timer apt-daily-upgrade.timer || warn "could not enable apt timers"
+
+# Journal retention: audit lines hold mailbox addresses and folder names (personal data), so the journal
+# keeps 30 days and at most 500 MB (JOURNAL_RETENTION and JOURNAL_MAX to change). Remove the file and
+# restart systemd-journald to reverse.
+JOURNAL_DROPIN=/etc/systemd/journald.conf.d/$NAME-retention.conf
+mkdir -p /etc/systemd/journald.conf.d
+cat > "$JOURNAL_DROPIN.new" <<EOF
+# Written by $NAME install.sh. Remove this file and restart systemd-journald to reverse.
+[Journal]
+MaxRetentionSec=${JOURNAL_RETENTION:-30day}
+SystemMaxUse=${JOURNAL_MAX:-500M}
+EOF
+if ! cmp -s "$JOURNAL_DROPIN.new" "$JOURNAL_DROPIN" 2>/dev/null; then
+    mv -f "$JOURNAL_DROPIN.new" "$JOURNAL_DROPIN"
+    systemctl restart systemd-journald || warn "could not restart systemd-journald; retention applies after reboot"
+    log "journald: keeps ${JOURNAL_RETENTION:-30day}, at most ${JOURNAL_MAX:-500M} ($JOURNAL_DROPIN)"
+else
+    rm -f "$JOURNAL_DROPIN.new"
+fi
 
 # --- 8. nginx and the certificate ---------------------------------------------------------------
 HAVE_IPV6=0

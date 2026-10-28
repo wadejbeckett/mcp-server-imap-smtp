@@ -96,6 +96,13 @@ def build_app(settings: Settings, *, verifier: Verifier | None = None, resolver:
     return Maintenance(app, functools.partial(store.purge_expired, refresh_ttl=settings.refresh_ttl))
 
 
+def quiet_sdk_logs() -> None:
+    """The MCP SDK logs every tool error's text at INFO ("Tool 'mail_read' failed: ..."), which can hold
+    mail-server replies, folder names and mailbox addresses. Its loggers are kept at WARNING, so the
+    journal holds only the audit lines (security review 2026-10-20, finding 13)."""
+    logging.getLogger("mcp.server").setLevel(logging.WARNING)
+
+
 def uvicorn_kwargs(settings: Settings) -> dict[str, Any]:
     """Login rate limiting keys on request.client.host, so it must be the real client. uvicorn only
     rewrites it from X-Forwarded-For when told to trust the proxy; otherwise the header is ignored."""
@@ -112,5 +119,6 @@ def main() -> None:
     args = ap.parse_args()
     settings = load_settings(Path(args.config))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    quiet_sdk_logs()
     install_access_log_filter()      # a logger filter, so uvicorn's own dictConfig keeps it
     uvicorn.run(build_app(settings), **uvicorn_kwargs(settings))
