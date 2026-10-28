@@ -75,6 +75,9 @@ class Settings:
     # same connection and mailbox; 0 turns reuse off. It is never reused once imap_max_session_age seconds have
     # passed since its login, so a password changed on the mail server takes effect within that time.
     max_sessions_per_mailbox: int = 4
+    # Tool calls one connection (grant) runs at once; a further call waits its turn, and is told the
+    # connection is busy if none comes free in 30 seconds. mail_search mailbox="*" counts as one call.
+    max_calls_per_grant: int = 4
     imap_idle_seconds: int = 60
     imap_max_session_age: int = 300
     # Client ID Metadata Document URLs are fetched only from these hosts (exact or subdomain): SSRF guard.
@@ -101,6 +104,8 @@ class Settings:
                 raise ValueError(f"{name} must be a whole number, 0 or more (0 means no limit)")
         if type(self.max_sessions_per_mailbox) is not int or self.max_sessions_per_mailbox < 1:
             raise ValueError("max_sessions_per_mailbox must be a whole number, 1 or more")
+        if type(self.max_calls_per_grant) is not int or self.max_calls_per_grant < 1:
+            raise ValueError("max_calls_per_grant must be a whole number, 1 or more")
         if type(self.imap_idle_seconds) is not int or self.imap_idle_seconds < 0:
             raise ValueError("imap_idle_seconds must be a whole number of seconds, 0 or more (0 turns reuse off)")
         if type(self.imap_max_session_age) is not int or self.imap_max_session_age < 0:
