@@ -116,13 +116,15 @@ def _parts(token: str, kind: str) -> tuple[str, str] | None:
 
 
 class Store:
-    def __init__(self, path: Path, legacy_server: MailServer | None = None, sealing_secret: bytes | None = None):
+    def __init__(self, path: Path, legacy_server: MailServer | None = None, sealing_secret: bytes | None = None,
+                 grant_max_age: int = 0):
         """legacy_server: where a mailbox sealed as a bare password (before the server was sealed with it)
         signs in (Settings.legacy_server). Without it such a mailbox cannot be opened.
         sealing_secret: the server's secret mixed into every token's key-encryption key
         (config.load_sealing_secret); None wraps with the token alone, as before."""
         self.legacy_server = legacy_server
         self.sealing_secret = sealing_secret
+        self.grant_max_age = grant_max_age      # seconds from sign-in after which no token is valid; 0 = none
         # Called with the grant id whenever a grant is revoked in this process (the mail tools close the
         # IMAP sessions they keep for it). A revocation from another process (the admin CLI) is not seen:
         # its kept sessions are closed after imap_idle_seconds, and its tokens no longer work anyway.
@@ -529,12 +531,17 @@ class Store:
     def _insert_tokens(self, grant_id, key, client_id, scopes, resource, access_ttl, refresh_ttl) -> tuple[str, str]:
         """Insert an access+refresh pair. The caller owns the transaction."""
         out = []
+        now = time.time()
+        end = None
+        if self.grant_max_age:
+            row = self._q("SELECT created FROM grants WHERE id=?", (grant_id,))
+            end = (row[0]["created"] if row else now) + self.grant_max_age
         for kind, ttl in (("access", access_ttl), ("refresh", refresh_ttl)):
             ident, secret = _id(), crypto.new_secret()
             wrapped = crypto.wrap_key(key, secret, f"{kind}:{ident}", self.sealing_secret)
             self._q("INSERT INTO tokens VALUES (?,?,?,?,?,?,?,?,?)", (ident, kind, grant_id,
                     crypto.hash_secret(secret), wrapped, client_id, json.dumps(scopes), resource,
-                    time.time() + ttl))
+                    now + ttl if end is None else min(now + ttl, end)))
             out.append(crypto.make_token(_PREFIX[kind], ident, secret))
         return out[0], out[1]
 

@@ -127,6 +127,7 @@ class MetadataPatch:
     @staticmethod
     def _authorization_server(scopes: list[str], meta: dict) -> None:
         meta["client_id_metadata_document_supported"] = True
+        meta["authorization_response_iss_parameter_supported"] = True   # RFC 9207 (provider.complete_login)
         methods = meta.setdefault("token_endpoint_auth_methods_supported", [])
         if "none" not in methods:
             methods.append("none")

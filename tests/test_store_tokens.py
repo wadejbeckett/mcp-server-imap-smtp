@@ -18,7 +18,7 @@ def flat(unlocked):
 
 
 def P():
-    return AuthorizationParams(state=None, scopes=None, code_challenge="cc",
+    return AuthorizationParams(state=None, scopes=None, code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
         redirect_uri=AnyUrl("https://claude.ai/api/mcp/auth_callback"),
         redirect_uri_provided_explicitly=True, resource="r")
 

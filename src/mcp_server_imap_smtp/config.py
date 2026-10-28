@@ -14,8 +14,8 @@ from .mail.hosts import MailServer
 DEFAULT_REDIRECTS = (
     "https://claude.ai/api/mcp/auth_callback",
     "https://chatgpt.com/connector_platform_oauth_redirect",
-    "https://chatgpt.com/connector/oauth/",  # trailing slash = this URL or anything under it
-    "https://grok.com/connectors-oauth-exchange-code/",
+    "https://chatgpt.com/connector/oauth/*",  # a trailing * = this URL or anything under it
+    "https://grok.com/connectors-oauth-exchange-code/",      # exact: the trailing slash is part of it
     "cursor://anysphere.cursor-mcp/oauth/callback",          # Cursor desktop
     "https://www.cursor.com/agents/mcp/oauth/callback",      # Cursor agents on the web
 )
@@ -42,6 +42,7 @@ class Settings:
     access_ttl: int = 3600
     refresh_ttl: int = 30 * 86400
     code_ttl: int = 300
+    grant_max_age: int = 90 * 86400   # a connection ends this long after sign-in, however often it refreshes; 0 = never
     pending_ttl: int = 300        # a sign-in page left open longer must be started again from the AI app
     login_failures: int = 5       # wrong passwords per client IP (IPv6: per /64) and per mailbox, per login_window
     login_window: int = 900
@@ -109,6 +110,8 @@ class Settings:
                 raise ValueError(f"{name} must be a whole number, 0 or more (0 means no limit)")
         if type(self.max_sessions_per_mailbox) is not int or self.max_sessions_per_mailbox < 1:
             raise ValueError("max_sessions_per_mailbox must be a whole number, 1 or more")
+        if type(self.grant_max_age) is not int or self.grant_max_age < 0:
+            raise ValueError("grant_max_age must be a whole number of seconds, 0 or more (0 means no limit)")
         if type(self.max_calls_per_grant) is not int or self.max_calls_per_grant < 1:
             raise ValueError("max_calls_per_grant must be a whole number, 1 or more")
         if type(self.imap_idle_seconds) is not int or self.imap_idle_seconds < 0:
@@ -214,7 +217,10 @@ def load_sealing_secret(settings: Settings, env: dict | None = None) -> bytes | 
     return secret
 
 
-_UNSAFE_REMAINDER = re.compile(r"\.\.|\\|%2e|#", re.IGNORECASE)
+# In what follows a prefix entry: no climbing out of the prefix once a client or browser normalises or
+# decodes the path ("..", backslashes, encoded dots, slashes and backslashes, a double-encoded %), no
+# path parameters and no fragment.
+_UNSAFE_REMAINDER = re.compile(r"\.\.|\\|%2e|%2f|%5c|%25|;|#", re.IGNORECASE)
 
 
 def redirect_allowed(uri: str, settings: Settings) -> bool:
@@ -223,11 +229,11 @@ def redirect_allowed(uri: str, settings: Settings) -> bool:
     if settings.allow_loopback_redirects and parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost", "::1"):
         return True
     for allowed in settings.redirect_allowlist:
-        if allowed.endswith("/"):
-            # The entry itself or anything under it, but nothing that could climb out of the prefix once
-            # a client or browser normalises the path ("..", backslashes, encoded dots) and no fragment.
-            if uri.startswith(allowed) and not _UNSAFE_REMAINDER.search(uri[len(allowed):]):
+        if allowed.endswith("*"):
+            # A prefix entry: the URL before the * or anything under it (see _UNSAFE_REMAINDER).
+            prefix = allowed[:-1]
+            if uri.startswith(prefix) and not _UNSAFE_REMAINDER.search(uri[len(prefix):]):
                 return True
-        elif uri == allowed:
+        elif uri == allowed:        # every other entry, a trailing slash included, matches exactly
             return True
     return False

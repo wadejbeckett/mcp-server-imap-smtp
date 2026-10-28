@@ -14,7 +14,7 @@ from mcp_server_imap_smtp.mail.hosts import MailServer as _MailServer
 MAIL1 = _MailServer("mail1.hosting.example")
 
 def params():
-    return AuthorizationParams(state="st", scopes=None, code_challenge="cc",
+    return AuthorizationParams(state="st", scopes=None, code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
         redirect_uri=AnyUrl("https://claude.ai/api/mcp/auth_callback"),
         redirect_uri_provided_explicitly=True, resource="http://127.0.0.1:8765/mail")
 

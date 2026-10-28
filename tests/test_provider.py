@@ -32,7 +32,7 @@ def client(uri=CB, cid="c1"):
 
 
 def params(resource=RES):
-    return AuthorizationParams(state="st", scopes=None, code_challenge="cc", redirect_uri=AnyUrl(CB),
+    return AuthorizationParams(state="st", scopes=None, code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", redirect_uri=AnyUrl(CB),
                                redirect_uri_provided_explicitly=True, resource=resource)
 
 
@@ -243,7 +243,7 @@ GROK = "https://grok.com/connectors-oauth-exchange-code/"
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("uri", [GROK, GROK + "x1"])
+@pytest.mark.parametrize("uri", [GROK])
 async def test_grok_callback_registers_and_authorizes(prov, uri):
     c = client(uri, cid="grok")
     await prov.register_client(c)

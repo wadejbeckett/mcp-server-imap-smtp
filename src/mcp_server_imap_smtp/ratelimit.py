@@ -44,6 +44,7 @@ def client_network(host: str | None) -> str:
 
 class RateLimiter:
     SWEEP_EVERY = 256        # every N recording calls, drop keys whose window has emptied
+    MAX_KEYS = 100_000       # keys tracked at once; past this a new key is refused (fails closed)
 
     def __init__(self, max_failures: int, window: int):
         self.max, self.window = max_failures, window
@@ -104,6 +105,12 @@ class RateLimiter:
         with self._lock:
             if any(self._blocked(k) for k in keys):
                 return False
+            new = [k for k in keys if k not in self._hits]
+            if new and len(self._hits) + len(new) > self.MAX_KEYS:
+                for k in list(self._hits):          # make room from windows that have emptied first
+                    self._trim(k)
+                if len(self._hits) + len(new) > self.MAX_KEYS:
+                    return False
             for k in keys:
                 self._record(k)
             return True

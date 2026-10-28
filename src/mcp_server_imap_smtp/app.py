@@ -51,7 +51,7 @@ def build_app(settings: Settings, *, verifier: Verifier | None = None, resolver:
     """opener, sender, verifier, resolver and cimd_http are the network entry points (mail IMAP/SMTP, the
     sign-in password check, MX lookups, client-metadata fetch); tests replace them."""
     store = store or Store(settings.db_path, legacy_server=settings.legacy_server,
-                           sealing_secret=load_sealing_secret(settings))
+                           sealing_secret=load_sealing_secret(settings), grant_max_age=settings.grant_max_age)
     resolver = resolver or Resolver(settings.mail_servers)
     verifier = verifier or imap_verifier
     provider = GatewayProvider(settings, store, cimd_http=cimd_http)

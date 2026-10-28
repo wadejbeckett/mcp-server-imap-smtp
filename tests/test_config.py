@@ -148,7 +148,7 @@ def test_operator_values_are_checked(tmp_path, line, message):
 def test_grok_callback_is_allowed_exactly_and_by_prefix(tmp_path):
     s = load(tmp_path, BASE)
     assert redirect_allowed("https://grok.com/connectors-oauth-exchange-code/", s)
-    assert redirect_allowed("https://grok.com/connectors-oauth-exchange-code/abc", s)
+    assert not redirect_allowed("https://grok.com/connectors-oauth-exchange-code/abc", s)   # exact (review L2)
     assert not redirect_allowed("https://grok.com/connectors-oauth-exchange-code", s)
     assert not redirect_allowed("https://grok.com.evil.com/connectors-oauth-exchange-code/", s)
     assert redirect_allowed("https://chatgpt.com/connector/oauth/", s)       # a trailing-slash entry matches itself
@@ -184,7 +184,8 @@ def _s(tmp_path):
                     db_path=tmp_path, allow_loopback_redirects=False)
 
 
-@pytest.mark.parametrize("uri", [GROK, GROK + "abc", GROK + "abc/def?x=1", "https://chatgpt.com/connector/oauth/xyz"])
+@pytest.mark.parametrize("uri", [GROK, "https://chatgpt.com/connector/oauth/xyz",
+                                 "https://chatgpt.com/connector/oauth/abc/def?x=1"])
 def test_prefix_entries_allow_paths_under_them(tmp_path, uri):
     assert redirect_allowed(uri, _s(tmp_path))
 
