@@ -96,7 +96,7 @@ One TOML file, read by both `mcp-server-imap-smtp` and `mcp-server-imap-smtp-adm
 | `access_ttl` | `3600` | Access token lifetime, seconds. |
 | `refresh_ttl` | `2592000` | Refresh token lifetime, seconds (30 days); refresh tokens rotate on use. |
 | `code_ttl` | `300` | Authorisation code lifetime, seconds. |
-| `pending_ttl` | `600` | How long a sign-in page stays valid after the client sends the user to it, seconds. |
+| `pending_ttl` | `300` | How long a sign-in page stays valid after the client sends the user to it, seconds. |
 | `login_failures` | `5` | Sign-in attempts allowed per client and per mailbox within `login_window`; further attempts get HTTP 429. An IPv6 client counts as its whole /64 (one host can rotate through its /64), an IPv4-mapped address as its IPv4 address. Wrong passwords count against both; malformed input, an address not hosted here and a DNS failure count against the client only; a success or a mail-server outage does not count. A mailbox's attempt is counted only when its own password is tried, so a wrong first password on a form does not count against the other mailboxes on it. When several wrong passwords on one form are found at once (the list is checked a few at a time, see "Many mailboxes in one connection"), each counts against its own mailbox and against the client. Mailbox keys use the normalised address, so case, Unicode dot and fullwidth variants of one address share a key. |
 | `login_window` | `900` | The lockout window, seconds. Also sent as `Retry-After`, and the window for the three limits below. |
 | `login_daily_failures` | `20` | Wrong passwords allowed per mailbox per 24 hours from one client network (IPv4 /24, IPv6 /48); five times this from all networks together. |

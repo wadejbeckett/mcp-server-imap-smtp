@@ -208,7 +208,7 @@ certbot certificates; certbot renew --dry-run                           # certif
 systemctl --failed                                                      # includes a failed nightly backup
 ```
 
-The access log leaves out query strings, but nginx's error log cannot: on any upstream error, such as the few seconds of each restart, it records the full request line, for example `/authorize?...state=...&code_challenge=...` or `/mail/login?req=<sign-in request id>`. These values are short-lived (a sign-in request expires after 10 minutes, the PKCE challenge is public by design), but they are kept out of the shared `/var/log/nginx/error.log`: the site logs errors to its own `mcp-server-imap-smtp.error.log`, rotated with Debian's nginx logs (daily, 14 kept, compressed). Do not raise its level to `info` or `debug`. The gateway's own journal lines and the nginx access log also contain client IP addresses.
+The access log leaves out query strings, but nginx's error log cannot: on any upstream error, such as the few seconds of each restart, it records the full request line, for example `/authorize?...state=...&code_challenge=...` or `/mail/login?req=<sign-in request id>`. These values are short-lived (a sign-in request expires after 5 minutes, the PKCE challenge is public by design), but they are kept out of the shared `/var/log/nginx/error.log`: the site logs errors to its own `mcp-server-imap-smtp.error.log`, rotated with Debian's nginx logs (daily, 14 kept, compressed). Do not raise its level to `info` or `debug`. The gateway's own journal lines and the nginx access log also contain client IP addresses.
 
 Admin CLI (lists and revokes grants; never prints secrets; full description in [RUNNING.md](RUNNING.md), "Admin CLI"):
 

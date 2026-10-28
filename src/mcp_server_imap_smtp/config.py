@@ -41,7 +41,7 @@ class Settings:
     access_ttl: int = 3600
     refresh_ttl: int = 30 * 86400
     code_ttl: int = 300
-    pending_ttl: int = 600
+    pending_ttl: int = 300        # a sign-in page left open longer must be started again from the AI app
     login_failures: int = 5       # wrong passwords per client IP (IPv6: per /64) and per mailbox, per login_window
     login_window: int = 900
     login_daily_failures: int = 20    # wrong passwords per mailbox per 24 hours
