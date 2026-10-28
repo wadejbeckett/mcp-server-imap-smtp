@@ -372,7 +372,7 @@ systemctl enable --quiet certbot.timer 2>/dev/null || warn "certbot.timer not en
 
 # --- 9. Activate: units, helpers, symlink switch, restart, health check --------------------------
 log "Installing systemd units and helpers"
-render() { sed -e "s/@NAME@/$NAME/g" "$1"; }   # render TEMPLATE: the bundle's unit and site templates for this NAME
+render() { sed -e "s/@NAME@/$NAME/g" -e "s/@LISTEN_PORT@/$LISTEN_PORT/g" "$1"; }   # render TEMPLATE: the bundle's unit and site templates for this NAME
 render "$BUNDLE/service.unit" > "/etc/systemd/system/$NAME.service"
 render "$BUNDLE/backup.service.unit" > "/etc/systemd/system/$NAME-backup.service"
 render "$BUNDLE/backup.timer.unit" > "/etc/systemd/system/$NAME-backup.timer"

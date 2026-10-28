@@ -48,7 +48,16 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
 SystemCallErrorNumber=EPERM
+# Security review 2026-10-20, finding 16. The service may bind only its own listener port; /proc shows
+# processes only; memory and tasks are capped (threads count as tasks: tool calls, sign-in checks, DNS).
+# PrivateUsers=yes is left out until tested on the target host.
+SocketBindAllow=tcp:@LISTEN_PORT@
+SocketBindDeny=any
+ProcSubset=pid
+MemoryMax=1G
+TasksMax=256
 
 [Install]
 WantedBy=multi-user.target
