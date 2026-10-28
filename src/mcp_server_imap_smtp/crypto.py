@@ -55,15 +55,31 @@ def unseal(key: bytes, blob: bytes, aad: bytes) -> bytes:
         raise CryptoError("cannot open sealed value") from exc
 
 
-def _kek(secret: str, context: str) -> bytes:
-    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=context.encode()).derive(secret.encode())
+def _kek(secret: str, context: str, pepper: bytes | None = None) -> bytes:
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=pepper, info=context.encode()).derive(secret.encode())
 
 
-def wrap_key(key: bytes, secret: str, context: str) -> bytes:
-    return seal(_kek(secret, context), key, context.encode())
+# A grant key wrapped with the server's sealing secret (the pepper) mixed into the key-encryption key:
+# one marker byte, then nonce + ciphertext. A wrapping without it is exactly 12 + 32 + 16 bytes.
+PEPPERED = b"\x01"
+_PLAIN_LEN = 12 + 32 + 16
 
 
-def unwrap_key(blob: bytes, secret: str, context: str) -> bytes:
+def wrap_key(key: bytes, secret: str, context: str, pepper: bytes | None = None) -> bytes:
+    """pepper: the server's sealing secret, kept outside the database and its backups, so a database copy
+    plus a token is not enough to open the grant key (security review 2026-10-20, finding 14)."""
+    if pepper is None:
+        return seal(_kek(secret, context), key, context.encode())
+    return PEPPERED + seal(_kek(secret, context, pepper), key, f"{context}|peppered".encode())
+
+
+def unwrap_key(blob: bytes, secret: str, context: str, pepper: bytes | None = None) -> bytes:
+    """Opens both forms, so grant keys wrapped before a pepper was configured keep working; each is
+    wrapped again under the pepper at its grant's next token refresh."""
+    if len(blob) == _PLAIN_LEN + 1 and blob[:1] == PEPPERED:
+        if pepper is None:
+            raise CryptoError("sealed with a server sealing secret that is not loaded")
+        return unseal(_kek(secret, context, pepper), blob[1:], f"{context}|peppered".encode())
     return unseal(_kek(secret, context), blob, context.encode())
 
 

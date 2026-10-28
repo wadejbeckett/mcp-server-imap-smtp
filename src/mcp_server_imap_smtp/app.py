@@ -21,7 +21,7 @@ from starlette.types import ASGIApp
 from .auth.cimd import MetadataPatch
 from .auth.login import LoginLimits, Verifier, imap_verifier, login_routes
 from .auth.provider import SCOPES, GatewayProvider
-from .config import Settings, load_settings
+from .config import Settings, load_sealing_secret, load_settings
 from .mail import smtp
 from .mail.imap import ImapClient
 from .mail.resolve import Resolver
@@ -50,7 +50,8 @@ def build_app(settings: Settings, *, verifier: Verifier | None = None, resolver:
               cimd_http: httpx.Client | None = None) -> ASGIApp:
     """opener, sender, verifier, resolver and cimd_http are the network entry points (mail IMAP/SMTP, the
     sign-in password check, MX lookups, client-metadata fetch); tests replace them."""
-    store = store or Store(settings.db_path, legacy_server=settings.legacy_server)
+    store = store or Store(settings.db_path, legacy_server=settings.legacy_server,
+                           sealing_secret=load_sealing_secret(settings))
     resolver = resolver or Resolver(settings.mail_servers)
     verifier = verifier or imap_verifier
     provider = GatewayProvider(settings, store, cimd_http=cimd_http)

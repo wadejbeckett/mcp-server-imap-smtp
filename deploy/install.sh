@@ -25,6 +25,7 @@
 #   /opt/$NAME/releases/<release>/venv   code and dependencies, root-owned, read-only to the service
 #   /opt/$NAME/venv -> releases/<release>/venv   the active release (switched atomically)
 #   /etc/$NAME/config.toml               root:$NAME 0640, created from the template only if absent
+#   /etc/$NAME/sealing-secret            root 0400, created only if absent; passed to the service by systemd
 #   /var/lib/$NAME                       $NAME 0700, the SQLite database
 #   /var/backups/$NAME                   root 0700, nightly backups ($NAME-backup.timer)
 #   /usr/local/sbin/$NAME-admin          admin CLI wrapper (runs as $NAME)
@@ -159,6 +160,17 @@ else
 fi
 chown root:"$SERVICE_USER" "$CONFIG"
 chmod 0640 "$CONFIG"
+# Sealing secret: mixed into the key that wraps each connection's key, so a database or backup copy plus a
+# token cannot open mailbox passwords. Root-only; the service reads it as the systemd credential
+# "sealing-secret" (LoadCredential=). Never in the backups. Losing it means users sign in again.
+SEALING_SECRET=$ETC/sealing-secret
+if [[ ! -s $SEALING_SECRET ]]; then
+    (umask 077; head -c 48 /dev/urandom | base64 -w0 > "$SEALING_SECRET.new")
+    mv -f "$SEALING_SECRET.new" "$SEALING_SECRET"
+    log "Wrote a new sealing secret $SEALING_SECRET (keep it out of backups; losing it means users sign in again)"
+fi
+chown root:root "$SEALING_SECRET"
+chmod 0400 "$SEALING_SECRET"
 if grep -qE '"(Example Hosting|Example Mail)"|"mail\.(example\.com|client\.example)"' "$CONFIG"; then
     warn "$CONFIG still has the template's example names or mail servers: set operator_name, product_name, the support"
     warn "contacts and [[mail_servers]] to your own, then systemctl restart $NAME (docs/DEPLOY.md, section 4)"

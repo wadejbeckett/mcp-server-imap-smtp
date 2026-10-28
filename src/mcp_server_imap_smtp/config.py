@@ -2,6 +2,7 @@
 """Runtime settings, loaded from one TOML file. Environment-specific values live only here."""
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -82,6 +83,10 @@ class Settings:
     imap_max_session_age: int = 300
     # Client ID Metadata Document URLs are fetched only from these hosts (exact or subdomain): SSRF guard.
     cimd_allowed_hosts: tuple[str, ...] = ("chatgpt.com", "openai.com", "claude.ai", "claude.com", "anthropic.com")
+    # A file holding the server's sealing secret (at least 32 bytes), mixed into the key that wraps each grant
+    # key. Kept outside the database and its backups. Unset: the systemd credential "sealing-secret" is used
+    # when the unit loads one (LoadCredential=), otherwise none (grant keys are wrapped with the token alone).
+    sealing_secret_file: str = ""
 
     def __post_init__(self):
         if isinstance(self.mail_servers, list):
@@ -183,6 +188,30 @@ def load_settings(path: Path) -> Settings:
         if key in raw:
             raw[key] = tuple(raw[key])
     return Settings(**raw)
+
+
+SEALING_SECRET_MIN = 32
+SEALING_CREDENTIAL = "sealing-secret"
+
+
+def load_sealing_secret(settings: Settings, env: dict | None = None) -> bytes | None:
+    """The sealing secret from settings.sealing_secret_file, else from $CREDENTIALS_DIRECTORY/sealing-secret
+    (systemd LoadCredential=), else None. Surrounding whitespace is ignored. A configured file that is
+    missing or shorter than 32 bytes stops the service rather than running without it."""
+    env = os.environ if env is None else env
+    path = settings.sealing_secret_file
+    if not path and env.get("CREDENTIALS_DIRECTORY"):
+        candidate = Path(env["CREDENTIALS_DIRECTORY"]) / SEALING_CREDENTIAL
+        path = str(candidate) if candidate.exists() else ""
+    if not path:
+        return None
+    try:
+        secret = Path(path).read_bytes().strip()
+    except OSError as exc:
+        raise ValueError(f"sealing secret {path} cannot be read ({exc.__class__.__name__})") from None
+    if len(secret) < SEALING_SECRET_MIN:
+        raise ValueError(f"sealing secret {path} is shorter than {SEALING_SECRET_MIN} bytes")
+    return secret
 
 
 _UNSAFE_REMAINDER = re.compile(r"\.\.|\\|%2e|#", re.IGNORECASE)

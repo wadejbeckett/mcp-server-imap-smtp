@@ -116,10 +116,13 @@ def _parts(token: str, kind: str) -> tuple[str, str] | None:
 
 
 class Store:
-    def __init__(self, path: Path, legacy_server: MailServer | None = None):
+    def __init__(self, path: Path, legacy_server: MailServer | None = None, sealing_secret: bytes | None = None):
         """legacy_server: where a mailbox sealed as a bare password (before the server was sealed with it)
-        signs in (Settings.legacy_server). Without it such a mailbox cannot be opened."""
+        signs in (Settings.legacy_server). Without it such a mailbox cannot be opened.
+        sealing_secret: the server's secret mixed into every token's key-encryption key
+        (config.load_sealing_secret); None wraps with the token alone, as before."""
         self.legacy_server = legacy_server
+        self.sealing_secret = sealing_secret
         # Called with the grant id whenever a grant is revoked in this process (the mail tools close the
         # IMAP sessions they keep for it). A revocation from another process (the admin CLI) is not seen:
         # its kept sessions are closed after imap_idle_seconds, and its tokens no longer work anyway.
@@ -456,7 +459,7 @@ class Store:
     # authorization codes (single use, bound to the grant key)
     def issue_code(self, grant_id: str, key: bytes, client_id: str, params: AuthorizationParams, ttl: int) -> str:
         ident, secret = _id(), crypto.new_secret()
-        wrapped = crypto.wrap_key(key, secret, f"code:{ident}")
+        wrapped = crypto.wrap_key(key, secret, f"code:{ident}", self.sealing_secret)
         self._q("INSERT INTO codes VALUES (?,?,?,?,?,?,?)", (ident, grant_id, crypto.hash_secret(secret), wrapped,
                 client_id, params.model_dump_json(), time.time() + ttl))
         return crypto.make_token("ac", ident, secret)
@@ -484,7 +487,7 @@ class Store:
             row, p = self._code_row(code)
             if row is None:
                 return None
-            key = crypto.unwrap_key(row["wrapped"], p[1], f"code:{p[0]}")
+            key = crypto.unwrap_key(row["wrapped"], p[1], f"code:{p[0]}", self.sealing_secret)
             self._q("DELETE FROM codes WHERE id=?", (p[0],))
             self._spend("code", p[0], row)
             return key
@@ -528,7 +531,7 @@ class Store:
         out = []
         for kind, ttl in (("access", access_ttl), ("refresh", refresh_ttl)):
             ident, secret = _id(), crypto.new_secret()
-            wrapped = crypto.wrap_key(key, secret, f"{kind}:{ident}")
+            wrapped = crypto.wrap_key(key, secret, f"{kind}:{ident}", self.sealing_secret)
             self._q("INSERT INTO tokens VALUES (?,?,?,?,?,?,?,?,?)", (ident, kind, grant_id,
                     crypto.hash_secret(secret), wrapped, client_id, json.dumps(scopes), resource,
                     time.time() + ttl))
@@ -560,7 +563,7 @@ class Store:
 
     def key_for(self, token: str, kind: str) -> bytes | None:
         row, p = self._token_row(token, kind)
-        return None if row is None else crypto.unwrap_key(row["wrapped"], p[1], f"{kind}:{p[0]}")
+        return None if row is None else crypto.unwrap_key(row["wrapped"], p[1], f"{kind}:{p[0]}", self.sealing_secret)
 
     def delete_token(self, token: str) -> None:
         parts = crypto.split_token(token)
@@ -577,7 +580,7 @@ class Store:
             row, p = self._token_row(refresh_token, "refresh")
             if row is None or row["client_id"] != client_id:
                 return None
-            key = crypto.unwrap_key(row["wrapped"], p[1], f"refresh:{p[0]}")
+            key = crypto.unwrap_key(row["wrapped"], p[1], f"refresh:{p[0]}", self.sealing_secret)
             rec = self._token_record(refresh_token, "refresh", row)
             self._q("DELETE FROM tokens WHERE id=?", (p[0],))
             self._spend("refresh", p[0], row)
@@ -589,5 +592,5 @@ class Store:
         row, p = self._token_row(access_token, "access")
         if row is None:
             return None
-        key = crypto.unwrap_key(row["wrapped"], p[1], f"access:{p[0]}")
+        key = crypto.unwrap_key(row["wrapped"], p[1], f"access:{p[0]}", self.sealing_secret)
         return row["grant_id"], self.open_mailboxes(row["grant_id"], key)
