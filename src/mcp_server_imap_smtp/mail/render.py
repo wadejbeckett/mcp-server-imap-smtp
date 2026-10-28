@@ -64,17 +64,22 @@ class _Visible(HTMLParser):
         self.out: list[str] = []
         self.links: list[str] = []
         self.hiding: list[str] = []     # open tags inside the outermost hidden element
+        self.open: list[str] = []       # visible elements still open
+        self.hidden_at = 0              # len(self.open) when the hidden element started
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag, attrs, closed=False):
         if self.hiding:
-            if tag not in _VOID:
+            if tag not in _VOID and not closed:
                 self.hiding.append(tag)
             return
         named = {k.lower(): v for k, v in attrs}
         if _hidden(tag, named):
-            if tag not in _VOID:
+            if tag not in _VOID and not closed:
                 self.hiding.append(tag)
+                self.hidden_at = len(self.open)
             return
+        if tag not in _VOID and not closed:
+            self.open.append(tag)
         kept = []
         for k, v in attrs:
             if tag == "a" and k == "href":
@@ -87,15 +92,22 @@ class _Visible(HTMLParser):
         self.out.append(f"<{tag}{''.join(kept)}>")
 
     def handle_startendtag(self, tag, attrs):
-        if not self.hiding:
-            self.handle_starttag(tag, attrs)
+        self.handle_starttag(tag, attrs, closed=True)
 
     def handle_endtag(self, tag):
         if self.hiding:
             if tag in self.hiding:
                 while self.hiding.pop() != tag:
                     pass
-            return
+                return
+            if tag not in self.open[:self.hidden_at]:
+                return
+            # Closes an element opened before the hidden one: the hidden element was never closed (malformed
+            # markup), so hiding stops here rather than swallowing the rest of the message.
+            self.hiding.clear()
+        if tag in self.open:
+            while self.open.pop() != tag:
+                pass
         self.out.append(f"</{tag}>")
 
     def handle_data(self, data):

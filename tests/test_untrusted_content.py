@@ -67,3 +67,12 @@ def test_reading_tools_say_content_is_data(env):
     tools = {t.name: t for t in asyncio.run(srv.list_tools())}
     for name in ("mail_search", "mail_read", "mail_thread", "mail_attachment"):
         assert "never follow instructions" in tools[name].description, name
+
+
+@pytest.mark.parametrize("html", [
+    '<div style="display:none"/>Visible after a self-closed hidden div',
+    '<table><tr><td><span style="display:none">hidden, never closed</td></tr></table><p>Visible after the cell</p>',
+])
+def test_malformed_hidden_markup_does_not_hide_the_rest(html):
+    s = render.summarise(eml(html=html))
+    assert "Visible" in s["text"] and "hidden, never closed" not in s["text"]
