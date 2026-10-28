@@ -68,6 +68,18 @@ def _shutdown(s: _SMTP | None, sock) -> None:
         sock.close()
 
 
+_ENHANCED = re.compile(r"\s*([245]\.\d{1,3}\.\d{1,3})\b")
+
+
+def refusal(code: int, text: bytes | str) -> str:
+    """What the AI is told about an SMTP refusal: the reply code, the enhanced status code when there is one
+    and whether it is temporary, never the server's free text (security review 2026-10-20, A8)."""
+    text = text.decode("utf-8", "replace") if isinstance(text, bytes) else str(text)
+    m = _ENHANCED.match(text)
+    kind = "temporary; try again later" if 400 <= code < 500 else "permanent" if 500 <= code < 600 else "unexpected"
+    return f"SMTP refused: {code}" + (f" {m.group(1)}" if m else "") + f" ({kind})"
+
+
 def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc=(),
          local_hostname: str | None = None) -> list[str]:
     """Send msg as the mailbox through server (port server.smtp_port); returns the recipients the
@@ -103,10 +115,9 @@ def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc
     except smtplib.SMTPRecipientsRefused as exc:
         raise MailError("mail server refused every recipient") from exc
     except smtplib.SMTPResponseException as exc:
-        text = exc.smtp_error.decode("utf-8", "replace") if isinstance(exc.smtp_error, bytes) else str(exc.smtp_error)
-        raise MailError(f"SMTP refused: {exc.smtp_code} {text}".strip()) from exc
+        raise MailError(refusal(exc.smtp_code, exc.smtp_error)) from exc
     except smtplib.SMTPException as exc:
-        raise MailError(f"SMTP failed: {exc}") from exc
+        raise MailError(f"SMTP failed ({exc.__class__.__name__})") from exc
     except OSError as exc:
         raise MailError("mail server connection failed") from exc
     finally:

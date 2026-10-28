@@ -24,6 +24,8 @@ import threading
 import time
 from typing import Callable, Iterable
 
+import idna
+
 from .hosts import HostNotAllowed, MailServer, is_dns_name
 
 _LOCAL = re.compile(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}")
@@ -49,12 +51,15 @@ def normalise_address(address: str) -> tuple[str, str]:
     local, at, domain = address.rpartition("@")
     if not at or not _LOCAL.fullmatch(local or "x y"):
         raise HostNotAllowed(address)
+    # IDNA 2008 with UTS 46 non-transitional mapping, as browsers and registries use: "faß.de" stays
+    # xn--fa-hia.de rather than becoming fass.de, a different domain (security review 2026-10-20, A6).
     try:
-        domain = domain.encode("idna").decode("ascii")
-    except UnicodeError as exc:
+        domain = idna.uts46_remap(domain, std3_rules=True, transitional=False)
+        if domain.endswith("."):
+            domain = domain[:-1]
+        domain = idna.encode(domain, uts46=False).decode("ascii")
+    except (idna.IDNAError, UnicodeError) as exc:
         raise HostNotAllowed(address) from exc
-    if domain.endswith("."):
-        domain = domain[:-1]
     if not is_dns_name(domain, min_labels=2):
         raise HostNotAllowed(address)
     return f"{local}@{domain}", domain

@@ -170,6 +170,23 @@ def _get_attachment_data(part: EmailMessage) -> bytes:
         return part.get_payload(decode=True) or b""
 
 
+def _size(part: EmailMessage) -> int:
+    """The decoded size of an attachment, worked out from its encoded form so a large message's attachments
+    are not all decoded just to list them (security review 2026-10-20, A9)."""
+    if part.get_content_type() == "message/rfc822" or part.is_multipart():
+        return len(_get_attachment_data(part))
+    payload = part.get_payload(decode=False)
+    if not isinstance(payload, str):
+        return len(_get_attachment_data(part))
+    cte = str(part.get("Content-Transfer-Encoding", "")).strip().lower()
+    if cte == "base64":
+        b64 = "".join(payload.split())
+        return max(len(b64) * 3 // 4 - (len(b64) - len(b64.rstrip("="))), 0)
+    if cte == "quoted-printable":
+        return len(_get_attachment_data(part))
+    return len(payload.encode("utf-8", "surrogateescape"))
+
+
 def _attachments(msg: EmailMessage) -> list[EmailMessage]:
     return list(msg.iter_attachments())
 
@@ -195,9 +212,8 @@ def summarise(raw: bytes, body_cap: int = 50_000) -> dict:
     truncated = len(text) > body_cap
     atts = []
     for i, part in enumerate(_attachments(msg)):
-        data = _get_attachment_data(part)
         atts.append({"index": i, "filename": part.get_filename() or f"attachment-{i}",
-                     "content_type": part.get_content_type(), "size": len(data)})
+                     "content_type": part.get_content_type(), "size": _size(part)})
     return {
         "message_id": str(msg.get("Message-ID", "")), "date": str(msg.get("Date", "")), "from": str(msg.get("From", "")),
         "to": str(msg.get("To", "")), "cc": str(msg.get("Cc", "")), "subject": str(msg.get("Subject", "")),

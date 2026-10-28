@@ -89,9 +89,14 @@ def _uid(uid: int) -> None:
         raise ToolError("uid must be a positive number")
 
 
+MAX_UIDS = 500
+
+
 def _uids(uids: list[int]) -> None:
     if not uids or any(u <= 0 for u in uids):
         raise ToolError("uids must be a non-empty list of positive numbers")
+    if len(uids) > MAX_UIDS:
+        raise ToolError(f"uids may list at most {MAX_UIDS} messages per call")
 
 
 def _when(row: dict) -> float:

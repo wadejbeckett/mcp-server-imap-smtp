@@ -405,6 +405,7 @@ dependencies = [
     { name = "dnspython" },
     { name = "html2text" },
     { name = "httpx" },
+    { name = "idna" },
     { name = "mcp" },
     { name = "uvicorn" },
 ]
@@ -420,6 +421,7 @@ requires-dist = [
     { name = "dnspython", specifier = ">=2.6" },
     { name = "html2text", specifier = ">=2024.2" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "idna", specifier = ">=3.6" },
     { name = "mcp", specifier = ">=2.1,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "uvicorn", specifier = ">=0.30" },
