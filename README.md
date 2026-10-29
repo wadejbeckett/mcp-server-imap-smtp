@@ -65,6 +65,16 @@ How credentials are handled, what the connector logs, and how to report a vulner
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Support this project
+
+hosted-mcp is free software from Noiz. If it is useful to you, the main way to support its development is a donation in Monero (XMR):
+
+```text
+44BtMn9izxH8mK2yFbSdY6Di7TNobkLbnHdZ6gZQjukCME5vsNhtPRtH4TcVkDHKHLhSpAJbsjv8gCdYuSZVMpXgMkUC1hV
+```
+
+You can also help by reporting bugs, sending fixes or starring the repository.
+
 ## Licence
 
 Copyright the mcp-server-imap-smtp contributors.
