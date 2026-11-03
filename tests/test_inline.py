@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import base64
+import random
+import re
 import socket
 import struct
+import time
 import zlib
 from email import policy
 from email.parser import BytesParser
@@ -135,6 +138,23 @@ def test_no_new_fetch_after_the_embed_deadline():
     ticks = iter([0.0, 0.0, inline.EMBED_DEADLINE + 1])
     with pytest.raises(MailError, match="took too long"):
         inline.embed(SIGNATURE, "x.example", fetch=fake_fetch, clock=lambda: next(ticks))
+
+
+@pytest.mark.parametrize("html", ["<img " * 40_000, '<img "x" ' * 25_000, "<img alt='" + "<img " * 40_000,
+                                  "<img " + "a" * 200_000])
+def test_unclosed_img_tags_take_linear_time(html):
+    started = time.perf_counter()
+    assert inline.embed(html, "x.example", fetch=pytest.fail) == (html, [])
+    assert time.perf_counter() - started < 0.5
+
+
+def test_img_spans_match_the_tags_the_pattern_finds():
+    pattern = re.compile(r"""<img\b(?:[^>"']|"[^"]*"|'[^']*')*>""", re.I)
+    rng = random.Random(20261103)
+    for _ in range(3000):
+        html = "".join(rng.choice(["<img", "<IMG", "<imgx", " ", "a", ">", '"', "'", "<", "src=x"])
+                       for _ in range(rng.randint(0, 25)))
+        assert list(inline._img_spans(html)) == [m.span() for m in pattern.finditer(html)], html
 
 
 def test_html_without_images_is_unchanged_and_needs_no_fetch():

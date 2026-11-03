@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import bisect
 import html as htmllib
 import ipaddress
 import re
@@ -37,7 +38,8 @@ TIMEOUT = 10.0       # per network step
 DEADLINE = 20.0      # whole fetch of one image, redirects included
 EMBED_DEADLINE = 30.0   # no new fetch starts after this: a message's images are fetched while a mail session is held
 
-_IMG = re.compile(r"""<img\b(?:[^>"']|"[^"]*"|'[^']*')*>""", re.I)
+_IMG_OPEN = re.compile(r"<img\b", re.I)
+_TAG_STOP = re.compile(r"""[>"']""")
 _SRC = re.compile(r"""(\ssrc\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", re.I)
 _HOSTNAME = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$")
 _DATA = re.compile(r"^data:([^,]*),(.*)$", re.I | re.S)
@@ -149,6 +151,39 @@ def decode_data_uri(uri: str) -> bytes:
         raise MailError("a data: image is not valid base64") from None
 
 
+def _img_spans(html: str):
+    """(start, end) of each <img> tag: from <img, quoted values are skipped and the first > outside them ends
+    the tag; a quote left open means no tag starts there. The same tags as the pattern
+    <img\\b(?:[^>"']|"[^"]*"|'[^']*')*> finds, in linear time: that pattern is quadratic when many <img are
+    left unclosed, so one mail_draft could stall the process. A scan that reaches a > or an opening quote ends
+    the same way from there whichever <img it started at, so each one is worked out once."""
+    stops = [m.start() for m in _TAG_STOP.finditer(html)]
+    ends: dict[int, int] = {}       # stop -> end of the tag, or -1 when there is none
+    pos = 0
+    while m := _IMG_OPEN.search(html, pos):
+        path, i, end = [], m.end(), -1
+        while (k := bisect.bisect_left(stops, i)) < len(stops):
+            j = stops[k]
+            if j in ends:
+                end = ends[j]
+                break
+            path.append(j)
+            if html[j] == ">":
+                end = j + 1
+                break
+            close = html.find(html[j], j + 1)
+            if close < 0:
+                break
+            i = close + 1
+        for j in path:
+            ends[j] = end
+        if end < 0:
+            pos = m.start() + 1
+        else:
+            yield m.start(), end
+            pos = end
+
+
 def _filename(url: str, subtype: str, n: int) -> str:
     if url.lower().startswith("https://"):
         name = _NAME.sub("", httpx.URL(url).path.rsplit("/", 1)[-1])[:80]
@@ -197,5 +232,9 @@ def embed(html: str, domain: str, fetch: Callable[[str], bytes] = fetch_https, *
             found[url] = Image(cid, data, subtype, _filename(url, subtype, len(found) + 1))
         return f'{s.group(1)}"cid:{found[url].cid}"'
 
-    out = _IMG.sub(lambda m: _SRC.sub(src, m.group(0), count=1), html)
-    return out, list(found.values())
+    out, last = [], 0
+    for a, b in _img_spans(html):
+        out += [html[last:a], _SRC.sub(src, html[a:b], count=1)]
+        last = b
+    out.append(html[last:])
+    return "".join(out), list(found.values())
