@@ -1029,7 +1029,7 @@ def test_sign_in_password_checks_take_turns_under_the_servers_cap(tmp_path):
     prov = GatewayProvider(s, store)
     from mcp.server.auth.provider import AuthorizationParams
     req = store.create_pending("c1", AuthorizationParams(
-        state="st", scopes=None, code_challenge="cc", redirect_uri=AnyUrl("https://claude.ai/api/mcp/auth_callback"),
+        state="st", scopes=None, code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", redirect_uri=AnyUrl("https://claude.ai/api/mcp/auth_callback"),
         redirect_uri_provided_explicitly=True, resource=s.mail_resource_url), ttl=600)
     lock, state = threading.Lock(), {"now": 0, "max": 0}
 

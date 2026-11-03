@@ -72,6 +72,24 @@ VERIFY_BUDGET_BASE = 60.0           # seconds a sign-in may spend on DNS and pas
 VERIFY_BUDGET_PER_MAILBOX = 2.0     # ... plus this much for each mailbox on the form
 
 
+MAX_SHOWN_NAME = 60   # characters of the name a registering app chose for itself, shown on the pages
+
+
+def shown_name(name: str) -> str:
+    """The app's self-chosen name, cut to MAX_SHOWN_NAME characters for display."""
+    name = " ".join(name.split())
+    return name if len(name) <= MAX_SHOWN_NAME else name[:MAX_SHOWN_NAME - 1].rstrip() + "…"
+
+
+def return_target(redirect_uri: str) -> str:
+    """Where the browser goes after sign-in, as the user should recognise it: the host for a web address,
+    scheme and host for an app link (cursor://...)."""
+    u = urlsplit(redirect_uri)
+    if u.scheme in ("http", "https"):
+        return u.hostname or redirect_uri
+    return f"{u.scheme}://{u.netloc}" if u.netloc else f"{u.scheme}:"
+
+
 def security_headers(redirect_uri: str | None = None) -> dict[str, str]:
     """form-action also governs the redirect after a submit, so the pending request's (already
     allowlisted) redirect origin must be named or Chrome and Safari block the final 302."""
@@ -80,7 +98,9 @@ def security_headers(redirect_uri: str | None = None) -> dict[str, str]:
         u = urlsplit(redirect_uri)
         host = f"[{u.hostname}]" if u.hostname and ":" in u.hostname else u.hostname
         form_action += f" {u.scheme}://{host}" + (f":{u.port}" if u.port else "")
-    return {"X-Frame-Options": "DENY", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    # same-origin, not no-referrer: with no-referrer browsers send "Origin: null" on the form's own POST, and
+    # the forms refuse posts from any other origin (cross_site). Nothing leaves for other sites either way.
+    return {"X-Frame-Options": "DENY", "Cache-Control": "no-store", "Referrer-Policy": "same-origin",
             "Content-Security-Policy": ("default-src 'none'; style-src 'unsafe-inline'; "
                                         f"form-action {form_action}; frame-ancestors 'none'")}
 
@@ -101,7 +121,8 @@ label{{display:block;margin:12px 0 4px}}input,textarea{{width:100%;box-sizing:bo
 textarea{{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}}
 button{{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}}
 .err{{color:#c22;margin-top:12px}}details{{margin-top:16px;color:var(--mut)}}p{{color:var(--mut)}}</style></head>
-<body><main><h1>Connect your mailbox</h1><p>{client} is asking to use your email hosted by {operator}. Sign in with the same address and password you use in your mail app.</p>
+<body><main><h1>Connect your mailbox</h1><p>{client} (name supplied by the app) is asking to use your email hosted by {operator}. Sign in with the same address and password you use in your mail app.</p>
+<p>When you connect, you will return to <strong>{target}</strong>. Only continue if you started this from your own AI app just now.</p>
 <form method="post" action="login"><input type="hidden" name="req" value="{req}">
 <label for="e">Email address</label><input id="e" name="email" type="email" autocomplete="username" value="{email}">
 <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">
@@ -273,6 +294,7 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
     def page(req, client, redirect_uri, email="", more_open=False, error: str | list[str] = "", status=200):
         errors = [e for e in ([error] if isinstance(error, str) else error) if e]
         body = PAGE.format(req=html.escape(req), client=html.escape(client), email=html.escape(email),
+                           target=html.escape(return_target(redirect_uri)),
                            product=html.escape(settings.product_name), operator=html.escape(settings.operator_name),
                            support=support, open=" open" if more_open else "", limit=limit_text,
                            error=(f'<p class="err" role="alert">{"<br>".join(html.escape(e) for e in errors)}</p>'
@@ -290,13 +312,25 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
                                                    + (f", starting with {subject}." if count > 1 else f": {subject}.")))
         return HTMLResponse(body, headers=security_headers(redirect_uri))
 
+    issuer = urlsplit(settings.issuer_url)
+    own_origin = f"{issuer.scheme}://{issuer.netloc}"
+
+    def cross_site(request: Request) -> Response | None:
+        """A form post from another site (or an opaque "null" origin) is refused before anything is read or
+        counted, so a third-party page cannot make its visitors' browsers guess passwords. A request with no
+        Origin header (not a browser form post) is let through."""
+        origin = request.headers.get("origin")
+        if origin is None or origin == own_origin:
+            return None
+        return Response("This form can only be sent from its own page.", 403, headers=security_headers())
+
     def expired() -> Response:
         return Response("This sign-in link has expired. Start again from your AI app.", 400, headers=security_headers())
 
     async def client_name(client_id: str) -> str:
         # The provider, not the store: a CIMD client (ChatGPT) lives only in the provider's metadata cache.
         info = await provider.get_client(client_id)
-        return (info.client_name if info and info.client_name else "An AI app")
+        return shown_name(info.client_name) if info and info.client_name and info.client_name.strip() else "An AI app"
 
     def ip(request: Request) -> str:
         # request.client.host only. Behind the reverse proxy uvicorn rewrites it from the trusted
@@ -480,6 +514,8 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
         return page(req, await client_name(found[0]), str(found[1].redirect_uri))
 
     async def post(request: Request) -> Response:
+        if (refused := cross_site(request)) is not None:
+            return refused
         try:
             form = await read_form(request)
         except FormTooLarge:
@@ -587,6 +623,8 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
         return manage_signin_page()
 
     async def manage_post(request: Request) -> Response:
+        if (refused := cross_site(request)) is not None:
+            return refused
         try:
             form = await read_form(request)
         except FormTooLarge:

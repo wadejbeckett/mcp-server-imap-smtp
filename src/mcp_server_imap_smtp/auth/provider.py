@@ -2,6 +2,7 @@
 """OAuth 2.1 authorization server for the gateway, on the MCP SDK's provider protocol."""
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Callable
@@ -12,7 +13,9 @@ import httpx
 from mcp.server.auth.provider import (AccessToken, AuthorizationCode, AuthorizationParams, AuthorizeError,
                                       IdentityAssertionParams, RefreshToken, RegistrationError, TokenError,
                                       construct_redirect_uri)
-from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from mcp.shared.auth import OAuthClientInformationFull, OAuthMetadata, OAuthToken
+import re
+
 from pydantic import AnyUrl
 
 from ..config import Settings, redirect_allowed
@@ -106,6 +109,9 @@ def _loopback_key(uri: str) -> tuple[str, str, str] | None:
     return parts.hostname, parts.path or "/", parts.query
 
 
+_S256_CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43}")
+
+
 def _gateway_client(info: OAuthClientInformationFull | None) -> GatewayClient | None:
     return None if info is None else GatewayClient.model_validate(info.model_dump())
 
@@ -120,6 +126,10 @@ class GatewayProvider:
         self._cimd_cache: dict[str, tuple[OAuthClientInformationFull, float]] = {}
         self._cimd_failures: dict[str, float] = {}     # url -> retry-after time, so a bad URL is not refetched for 60 s
         self._cimd_limiter = anyio.CapacityLimiter(CIMD_WORKERS)
+        # The issuer exactly as the SDK's metadata document writes it (OAuthMetadata keeps an empty path
+        # empty), which is what a client compares the RFC 9207 iss parameter with.
+        self.issuer = json.loads(OAuthMetadata(issuer=settings.issuer_url, authorization_endpoint=settings.issuer_url,
+                                               token_endpoint=settings.issuer_url).model_dump_json())["issuer"]
 
     def _remember(self, table: dict, key: str, value) -> None:
         if len(table) >= CIMD_CACHE_MAX:
@@ -128,6 +138,16 @@ class GatewayProvider:
                 del table[k]
         if len(table) < CIMD_CACHE_MAX:
             table[key] = value
+
+    def _allowed_only(self, info: OAuthClientInformationFull | None) -> OAuthClientInformationFull | None:
+        """A stored client with only the redirect URIs the current allowlist accepts, or None when none is
+        left, so the SDK never redirects (not even an error) to a URI the operator has since removed."""
+        if info is None:
+            return None
+        uris = [u for u in info.redirect_uris or [] if redirect_allowed(str(u), self.settings)]
+        if not uris:
+            return None
+        return info if len(uris) == len(info.redirect_uris or []) else info.model_copy(update={"redirect_uris": uris})
 
     def _resource_ok(self, resource: str) -> bool:
         return resource.rstrip("/") == self.settings.mail_resource_url.rstrip("/")
@@ -138,7 +158,7 @@ class GatewayProvider:
 
     async def _load_client(self, client_id: str) -> OAuthClientInformationFull | None:
         if not is_cimd(client_id):
-            return self.store.get_client(client_id)
+            return self._allowed_only(self.store.get_client(client_id))
         if not cimd_fetchable(client_id, self.settings):     # refused URLs cost no worker and no cache slot
             return None
         cached = self._cimd_cache.get(client_id)
@@ -178,6 +198,9 @@ class GatewayProvider:
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         if not redirect_allowed(str(params.redirect_uri), self.settings):
             raise AuthorizeError(error="invalid_request", error_description="redirect URI not allowed")
+        # The SDK requires S256 but not its form: an S256 challenge is 43 base64url characters (RFC 7636).
+        if not _S256_CHALLENGE.fullmatch(params.code_challenge or ""):
+            raise AuthorizeError(error="invalid_request", error_description="code_challenge must be an S256 value")
         resource = params.resource or self.settings.mail_resource_url
         if not self._resource_ok(resource):
             raise AuthorizeError(error="invalid_target", error_description="unknown resource")
@@ -193,7 +216,10 @@ class GatewayProvider:
         client_id, params = found
         gid, key = self.store.create_grant(client_id, params.resource, mailboxes)
         code = self.store.issue_code(gid, key, client_id, params, self.settings.code_ttl)
-        return construct_redirect_uri(str(params.redirect_uri), code=code, state=params.state)
+        # RFC 9207: the issuer, exactly as the metadata states it, so a client talking to many authorization
+        # servers can tell which one answered (mix-up protection).
+        return construct_redirect_uri(str(params.redirect_uri), code=code, state=params.state,
+                                      iss=self.issuer)
 
     async def load_authorization_code(self, client, authorization_code: str) -> AuthorizationCode | None:
         rec = self.store.load_code(authorization_code)

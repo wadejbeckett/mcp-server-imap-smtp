@@ -41,7 +41,7 @@ def make_env(tmp_path, verify=verifier, redirect="https://claude.ai/api/mcp/auth
                  mail_servers=resolver.servers, db_path=tmp_path / "s.sqlite", login_failures=limit,
                  operator_name="Acme Hosting", **settings_kw)
     store = Store(s.db_path); prov = GatewayProvider(s, store)
-    req = store.create_pending("c1", AuthorizationParams(state="st", scopes=None, code_challenge="cc",
+    req = store.create_pending("c1", AuthorizationParams(state="st", scopes=None, code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
         redirect_uri=AnyUrl(redirect), redirect_uri_provided_explicitly=True,
         resource=s.mail_resource_url), ttl=600)
     if client_name:
@@ -324,7 +324,7 @@ def test_security_headers_on_every_response(tmp_path):
     assert [r.status_code for r in responses] == [200, 400, 503, 429]
     for r in responses:
         assert r.headers["x-frame-options"] == "DENY" and r.headers["cache-control"] == "no-store"
-        assert r.headers["referrer-policy"] == "no-referrer"
+        assert r.headers["referrer-policy"] == "same-origin"
         assert "default-src 'none'" in csp(r) and "frame-ancestors 'none'" in csp(r) and "form-action 'self'" in csp(r)
     assert blocked.headers["retry-after"] == "900"
 
@@ -357,18 +357,18 @@ def test_login_page_names_a_cimd_client_from_its_metadata_document(tmp_path):
     http = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=doc)))
     store = Store(s.db_path)
     prov = GatewayProvider(s, store, cimd_http=http)
-    req = store.create_pending(cimd_id, AuthorizationParams(state="st", scopes=None, code_challenge="cc",
+    req = store.create_pending(cimd_id, AuthorizationParams(state="st", scopes=None, code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
         redirect_uri=AnyUrl(cb), redirect_uri_provided_explicitly=True, resource=s.mail_resource_url), ttl=600)
     c = TestClient(Starlette(routes=login_routes(prov, RES, verifier, RateLimiter(3, 900), s)), follow_redirects=False)
     page = c.get(f"/mail/login?req={req}")
-    assert page.status_code == 200 and "ChatGPT is asking" in page.text
+    assert page.status_code == 200 and "ChatGPT (name supplied by the app) is asking" in page.text
     again = c.post("/mail/login", data={"req": req, "email": "me@x.co.za", "password": "wrong"})
-    assert "ChatGPT is asking" in again.text
+    assert "ChatGPT (name supplied by the app) is asking" in again.text
 
 
 def test_login_page_names_a_registered_client(tmp_path):
     c, req, _, _ = make_env(tmp_path, client_name="Claude Code")
-    assert "Claude Code is asking" in c.get(f"/mail/login?req={req}").text
+    assert "Claude Code (name supplied by the app) is asking" in c.get(f"/mail/login?req={req}").text
 
 
 # several mailboxes and address resolution (generic phase 1, T3; the pasted list, 20 October)
@@ -788,7 +788,7 @@ def test_page_copy_comes_from_settings_and_is_escaped(tmp_path):
                  mail_servers=(MAIL1,), db_path=tmp_path / "t.sqlite", operator_name="A&B <Hosting>",
                  product_name="AB Mail", support_url="https://ab.example/help?a=1&b=2", support_email="help@ab.example")
     store = Store(s.db_path)
-    req2 = store.create_pending("c1", AuthorizationParams(state="st", scopes=None, code_challenge="cc",
+    req2 = store.create_pending("c1", AuthorizationParams(state="st", scopes=None, code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
         redirect_uri=AnyUrl("https://claude.ai/api/mcp/auth_callback"), redirect_uri_provided_explicitly=True,
         resource=s.mail_resource_url), ttl=600)
     c2 = TestClient(Starlette(routes=login_routes(GatewayProvider(s, store), RES, verifier, RateLimiter(3, 900), s)))

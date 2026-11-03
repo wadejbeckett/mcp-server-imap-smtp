@@ -21,7 +21,7 @@ from starlette.types import ASGIApp
 from .auth.cimd import MetadataPatch
 from .auth.login import LoginLimits, Verifier, imap_verifier, login_routes
 from .auth.provider import SCOPES, GatewayProvider
-from .config import Settings, load_settings
+from .config import Settings, load_sealing_secret, load_settings
 from .mail import smtp
 from .mail.imap import ImapClient
 from .mail.resolve import Resolver
@@ -50,7 +50,8 @@ def build_app(settings: Settings, *, verifier: Verifier | None = None, resolver:
               cimd_http: httpx.Client | None = None) -> ASGIApp:
     """opener, sender, verifier, resolver and cimd_http are the network entry points (mail IMAP/SMTP, the
     sign-in password check, MX lookups, client-metadata fetch); tests replace them."""
-    store = store or Store(settings.db_path, legacy_server=settings.legacy_server)
+    store = store or Store(settings.db_path, legacy_server=settings.legacy_server,
+                           sealing_secret=load_sealing_secret(settings), grant_max_age=settings.grant_max_age)
     resolver = resolver or Resolver(settings.mail_servers)
     verifier = verifier or imap_verifier
     provider = GatewayProvider(settings, store, cimd_http=cimd_http)
@@ -96,6 +97,13 @@ def build_app(settings: Settings, *, verifier: Verifier | None = None, resolver:
     return Maintenance(app, functools.partial(store.purge_expired, refresh_ttl=settings.refresh_ttl))
 
 
+def quiet_sdk_logs() -> None:
+    """The MCP SDK logs every tool error's text at INFO ("Tool 'mail_read' failed: ..."), which can hold
+    mail-server replies, folder names and mailbox addresses. Its loggers are kept at WARNING, so the
+    journal holds only the audit lines (security review 2026-10-20, finding 13)."""
+    logging.getLogger("mcp.server").setLevel(logging.WARNING)
+
+
 def uvicorn_kwargs(settings: Settings) -> dict[str, Any]:
     """Login rate limiting keys on request.client.host, so it must be the real client. uvicorn only
     rewrites it from X-Forwarded-For when told to trust the proxy; otherwise the header is ignored."""
@@ -112,5 +120,6 @@ def main() -> None:
     args = ap.parse_args()
     settings = load_settings(Path(args.config))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    quiet_sdk_logs()
     install_access_log_filter()      # a logger filter, so uvicorn's own dictConfig keeps it
     uvicorn.run(build_app(settings), **uvicorn_kwargs(settings))

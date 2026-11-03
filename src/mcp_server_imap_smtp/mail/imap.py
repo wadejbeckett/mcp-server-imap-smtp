@@ -184,6 +184,16 @@ def _drop(conn) -> None:
         pass
 
 
+_RESP_CODE = re.compile(r"\s*\[([A-Za-z-]+)")
+_CODE_REASONS = {
+    "NONEXISTENT": "it does not exist", "TRYCREATE": "the folder does not exist",
+    "ALREADYEXISTS": "it already exists", "NOPERM": "no permission", "OVERQUOTA": "the mailbox is over quota",
+    "LIMIT": "a mail server limit was reached", "INUSE": "in use; try again shortly",
+    "UNAVAILABLE": "temporarily unavailable; try again shortly", "SERVERBUG": "mail server error",
+    "CANNOT": "the mail server cannot do this", "EXPUNGEISSUED": "messages were removed meanwhile; try again",
+}
+
+
 class ImapClient:
     def __init__(self, conn: imaplib.IMAP4, address: str):
         self.c, self.address = conn, address
@@ -311,8 +321,14 @@ class ImapClient:
             return _UNCHANGED
 
     def _ok(self, typ, data, what):
+        """The server's free text never goes back to the AI (it can hold internal host names, addresses and
+        policy text; security review 2026-10-20, A8): only the RFC 5530 response code and a short reason."""
         if typ != "OK":
-            raise MailError(f"{what} failed: {data[0].decode(errors='replace') if data and data[0] else typ}")
+            text = data[0].decode(errors="replace") if data and isinstance(data[0], bytes) else ""
+            m = _RESP_CODE.match(text)
+            code = m.group(1).upper() if m else None
+            reason = _CODE_REASONS.get(code, "the mail server refused it")
+            raise MailError(f"{what} failed: {reason}" + (f" [{code}]" if code else ""))
         return data
 
     # folders

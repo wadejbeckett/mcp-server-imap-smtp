@@ -29,6 +29,10 @@ def _address(value: str, what: str) -> str:
     addr = parseaddr(value)[1]
     if len(parsed) != 1 or not addr or addr.count("@") != 1 or not _BARE.fullmatch(addr):
         raise MailError(f"{what} is not a single valid email address")
+    if "@" in parseaddr(value)[0]:
+        # '"x@evil.com" <y@good.com>' goes to y@good.com while a person checking the call reads x@evil.com
+        # (security review 2026-10-20, A7).
+        raise MailError(f"{what}: a display name may not contain an email address; give the address alone")
     return addr
 
 

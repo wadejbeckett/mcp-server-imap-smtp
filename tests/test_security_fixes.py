@@ -54,7 +54,7 @@ def login_env(tmp_path, verify, **kw):
     prov = GatewayProvider(s, store)
 
     def pending():
-        return store.create_pending("c1", AuthorizationParams(state="st", scopes=None, code_challenge="cc",
+        return store.create_pending("c1", AuthorizationParams(state="st", scopes=None, code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
                                     redirect_uri=AnyUrl(CB), redirect_uri_provided_explicitly=True,
                                     resource=s.mail_resource_url), ttl=600)
     limits = LoginLimits.from_settings(s)
@@ -354,7 +354,7 @@ def test_daily_cap_is_per_network_with_an_overall_ceiling(tmp_path):
     app = Starlette(routes=login_routes(prov, Resolver((MAIL1,)), lambda a, p, sv: False, limits, s))
 
     def pending():
-        return store.create_pending("c1", AuthorizationParams(state="st", scopes=None, code_challenge="cc",
+        return store.create_pending("c1", AuthorizationParams(state="st", scopes=None, code_challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
                                     redirect_uri=AnyUrl(CB), redirect_uri_provided_explicitly=True,
                                     resource=s.mail_resource_url), ttl=600)
     codes = [post_from(app, ip, {"req": pending(), "email": "boss@x.example", "password": "bad"}).status_code

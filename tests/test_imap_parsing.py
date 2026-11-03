@@ -77,7 +77,7 @@ def test_folders_cached_single_list_call():
 
 def test_folders_list_failure_is_mailerror():
     c, _ = client(list=("NO", [b"nope"]))
-    with pytest.raises(MailError, match="LIST failed: nope"):
+    with pytest.raises(MailError, match="LIST failed: the mail server refused it"):
         c.folders()
 
 

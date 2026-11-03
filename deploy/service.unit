@@ -17,6 +17,8 @@ Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
 UMask=0077
+# The sealing secret (config.load_sealing_secret), readable only by root on disk; install.sh creates it.
+LoadCredential=sealing-secret:/etc/@NAME@/sealing-secret
 
 # Sandbox. Writable: the state directory only. Allowed: outbound TCP (IMAPS/SMTPS to the mail host,
 # HTTPS for client metadata documents), the loopback listener, and the pdftotext child process.
@@ -46,7 +48,16 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
 SystemCallErrorNumber=EPERM
+# Security review 2026-10-20, finding 16. The service may bind only its own listener port; /proc shows
+# processes only; memory and tasks are capped (threads count as tasks: tool calls, sign-in checks, DNS).
+# PrivateUsers=yes is left out until tested on the target host.
+SocketBindAllow=tcp:@LISTEN_PORT@
+SocketBindDeny=any
+ProcSubset=pid
+MemoryMax=1G
+TasksMax=256
 
 [Install]
 WantedBy=multi-user.target

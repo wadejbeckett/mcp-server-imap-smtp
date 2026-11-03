@@ -18,12 +18,15 @@
 #   SSH_HARDEN=0   do not write the sshd drop-in (keys only, no forwarding).
 #   SSH_PORT       extra SSH port to allow in ufw. The ports sshd listens on and the port of the current
 #                  SSH session are always allowed, so the firewall cannot lock you out.
+#   JOURNAL_RETENTION, JOURNAL_MAX   journald retention (default 30day and 500M; audit lines are personal data).
+#   UPGRADE_REBOOT_TIME  e.g. 02:00: let unattended-upgrades reboot then when an update needs it (default: never).
 #   KEEP_RELEASES  installed releases to keep under /opt/$NAME/releases (default 3, minimum 2).
 #
 # Layout:
 #   /opt/$NAME/releases/<release>/venv   code and dependencies, root-owned, read-only to the service
 #   /opt/$NAME/venv -> releases/<release>/venv   the active release (switched atomically)
 #   /etc/$NAME/config.toml               root:$NAME 0640, created from the template only if absent
+#   /etc/$NAME/sealing-secret            root 0400, created only if absent; passed to the service by systemd
 #   /var/lib/$NAME                       $NAME 0700, the SQLite database
 #   /var/backups/$NAME                   root 0700, nightly backups ($NAME-backup.timer)
 #   /usr/local/sbin/$NAME-admin          admin CLI wrapper (runs as $NAME)
@@ -104,7 +107,7 @@ log "Installing Debian packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q --no-install-recommends \
-    python3 python3-venv nginx certbot ufw unattended-upgrades poppler-utils sqlite3 rsync \
+    python3 python3-venv nginx certbot ufw unattended-upgrades needrestart poppler-utils sqlite3 rsync \
     ca-certificates curl openssl iproute2
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || die "python3 >= 3.11 required ($(python3 -V))"
 
@@ -158,6 +161,17 @@ else
 fi
 chown root:"$SERVICE_USER" "$CONFIG"
 chmod 0640 "$CONFIG"
+# Sealing secret: mixed into the key that wraps each connection's key, so a database or backup copy plus a
+# token cannot open mailbox passwords. Root-only; the service reads it as the systemd credential
+# "sealing-secret" (LoadCredential=). Never in the backups. Losing it means users sign in again.
+SEALING_SECRET=$ETC/sealing-secret
+if [[ ! -s $SEALING_SECRET ]]; then
+    (umask 077; head -c 48 /dev/urandom | base64 -w0 > "$SEALING_SECRET.new")
+    mv -f "$SEALING_SECRET.new" "$SEALING_SECRET"
+    log "Wrote a new sealing secret $SEALING_SECRET (keep it out of backups; losing it means users sign in again)"
+fi
+chown root:root "$SEALING_SECRET"
+chmod 0400 "$SEALING_SECRET"
 if grep -qE '"(Example Hosting|Example Mail)"|"mail\.(example\.com|client\.example)"' "$CONFIG"; then
     warn "$CONFIG still has the template's example names or mail servers: set operator_name, product_name, the support"
     warn "contacts and [[mail_servers]] to your own, then systemctl restart $NAME (docs/DEPLOY.md, section 4)"
@@ -279,6 +293,42 @@ APT::Periodic::Unattended-Upgrade "1";
 EOF
 mv -f "$AUTO_UPGRADES.new" "$AUTO_UPGRADES"
 systemctl enable --quiet apt-daily.timer apt-daily-upgrade.timer || warn "could not enable apt timers"
+# Security updates restart the services that use the updated libraries (needrestart, automatic mode), so a
+# patched OpenSSL or Python is in use straight away. A new kernel still needs a reboot; set
+# UPGRADE_REBOOT_TIME=02:00 to let unattended-upgrades reboot at that time when one is required.
+NEEDRESTART_CONF=/etc/needrestart/conf.d/50-$NAME.conf
+if [[ -d /etc/needrestart/conf.d ]]; then
+    printf '# Written by %s install.sh. Remove this file to reverse.\n$nrconf{restart} = '"'"'a'"'"';\n' "$NAME" > "$NEEDRESTART_CONF"
+    log "needrestart: services restart automatically after updates ($NEEDRESTART_CONF)"
+else
+    warn "needrestart has no conf.d; services are not restarted after security updates"
+fi
+REBOOT_CONF=/etc/apt/apt.conf.d/52$NAME-reboot
+if [[ -n ${UPGRADE_REBOOT_TIME:-} ]]; then
+    [[ $UPGRADE_REBOOT_TIME =~ ^[0-2][0-9]:[0-5][0-9]$ ]] || die "UPGRADE_REBOOT_TIME must look like 02:00"
+    printf '// Written by %s install.sh. Remove this file to reverse.\nUnattended-Upgrade::Automatic-Reboot "true";\nUnattended-Upgrade::Automatic-Reboot-Time "%s";\n' \
+        "$NAME" "$UPGRADE_REBOOT_TIME" > "$REBOOT_CONF"
+    log "unattended-upgrades: reboots at $UPGRADE_REBOOT_TIME when an update needs it ($REBOOT_CONF)"
+fi
+
+# Journal retention: audit lines hold mailbox addresses and folder names (personal data), so the journal
+# keeps 30 days and at most 500 MB (JOURNAL_RETENTION and JOURNAL_MAX to change). Remove the file and
+# restart systemd-journald to reverse.
+JOURNAL_DROPIN=/etc/systemd/journald.conf.d/$NAME-retention.conf
+mkdir -p /etc/systemd/journald.conf.d
+cat > "$JOURNAL_DROPIN.new" <<EOF
+# Written by $NAME install.sh. Remove this file and restart systemd-journald to reverse.
+[Journal]
+MaxRetentionSec=${JOURNAL_RETENTION:-30day}
+SystemMaxUse=${JOURNAL_MAX:-500M}
+EOF
+if ! cmp -s "$JOURNAL_DROPIN.new" "$JOURNAL_DROPIN" 2>/dev/null; then
+    mv -f "$JOURNAL_DROPIN.new" "$JOURNAL_DROPIN"
+    systemctl restart systemd-journald || warn "could not restart systemd-journald; retention applies after reboot"
+    log "journald: keeps ${JOURNAL_RETENTION:-30day}, at most ${JOURNAL_MAX:-500M} ($JOURNAL_DROPIN)"
+else
+    rm -f "$JOURNAL_DROPIN.new"
+fi
 
 # --- 8. nginx and the certificate ---------------------------------------------------------------
 HAVE_IPV6=0
@@ -340,7 +390,7 @@ systemctl enable --quiet certbot.timer 2>/dev/null || warn "certbot.timer not en
 
 # --- 9. Activate: units, helpers, symlink switch, restart, health check --------------------------
 log "Installing systemd units and helpers"
-render() { sed -e "s/@NAME@/$NAME/g" "$1"; }   # render TEMPLATE: the bundle's unit and site templates for this NAME
+render() { sed -e "s/@NAME@/$NAME/g" -e "s/@LISTEN_PORT@/$LISTEN_PORT/g" "$1"; }   # render TEMPLATE: the bundle's unit and site templates for this NAME
 render "$BUNDLE/service.unit" > "/etc/systemd/system/$NAME.service"
 render "$BUNDLE/backup.service.unit" > "/etc/systemd/system/$NAME-backup.service"
 render "$BUNDLE/backup.timer.unit" > "/etc/systemd/system/$NAME-backup.timer"

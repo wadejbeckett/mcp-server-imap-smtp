@@ -2,6 +2,7 @@
 """Runtime settings, loaded from one TOML file. Environment-specific values live only here."""
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -13,8 +14,8 @@ from .mail.hosts import MailServer
 DEFAULT_REDIRECTS = (
     "https://claude.ai/api/mcp/auth_callback",
     "https://chatgpt.com/connector_platform_oauth_redirect",
-    "https://chatgpt.com/connector/oauth/",  # trailing slash = this URL or anything under it
-    "https://grok.com/connectors-oauth-exchange-code/",
+    "https://chatgpt.com/connector/oauth/*",  # a trailing * = this URL or anything under it
+    "https://grok.com/connectors-oauth-exchange-code/",      # exact: the trailing slash is part of it
     "cursor://anysphere.cursor-mcp/oauth/callback",          # Cursor desktop
     "https://www.cursor.com/agents/mcp/oauth/callback",      # Cursor agents on the web
 )
@@ -41,7 +42,8 @@ class Settings:
     access_ttl: int = 3600
     refresh_ttl: int = 30 * 86400
     code_ttl: int = 300
-    pending_ttl: int = 600
+    grant_max_age: int = 90 * 86400   # a connection ends this long after sign-in, however often it refreshes; 0 = never
+    pending_ttl: int = 300        # a sign-in page left open longer must be started again from the AI app
     login_failures: int = 5       # wrong passwords per client IP (IPv6: per /64) and per mailbox, per login_window
     login_window: int = 900
     login_daily_failures: int = 20    # wrong passwords per mailbox per 24 hours
@@ -75,10 +77,17 @@ class Settings:
     # same connection and mailbox; 0 turns reuse off. It is never reused once imap_max_session_age seconds have
     # passed since its login, so a password changed on the mail server takes effect within that time.
     max_sessions_per_mailbox: int = 4
+    # Tool calls one connection (grant) runs at once; a further call waits its turn, and is told the
+    # connection is busy if none comes free in 30 seconds. mail_search mailbox="*" counts as one call.
+    max_calls_per_grant: int = 4
     imap_idle_seconds: int = 60
     imap_max_session_age: int = 300
     # Client ID Metadata Document URLs are fetched only from these hosts (exact or subdomain): SSRF guard.
     cimd_allowed_hosts: tuple[str, ...] = ("chatgpt.com", "openai.com", "claude.ai", "claude.com", "anthropic.com")
+    # A file holding the server's sealing secret (at least 32 bytes), mixed into the key that wraps each grant
+    # key. Kept outside the database and its backups. Unset: the systemd credential "sealing-secret" is used
+    # when the unit loads one (LoadCredential=), otherwise none (grant keys are wrapped with the token alone).
+    sealing_secret_file: str = ""
 
     def __post_init__(self):
         if isinstance(self.mail_servers, list):
@@ -101,6 +110,10 @@ class Settings:
                 raise ValueError(f"{name} must be a whole number, 0 or more (0 means no limit)")
         if type(self.max_sessions_per_mailbox) is not int or self.max_sessions_per_mailbox < 1:
             raise ValueError("max_sessions_per_mailbox must be a whole number, 1 or more")
+        if type(self.grant_max_age) is not int or self.grant_max_age < 0:
+            raise ValueError("grant_max_age must be a whole number of seconds, 0 or more (0 means no limit)")
+        if type(self.max_calls_per_grant) is not int or self.max_calls_per_grant < 1:
+            raise ValueError("max_calls_per_grant must be a whole number, 1 or more")
         if type(self.imap_idle_seconds) is not int or self.imap_idle_seconds < 0:
             raise ValueError("imap_idle_seconds must be a whole number of seconds, 0 or more (0 turns reuse off)")
         if type(self.imap_max_session_age) is not int or self.imap_max_session_age < 0:
@@ -180,7 +193,34 @@ def load_settings(path: Path) -> Settings:
     return Settings(**raw)
 
 
-_UNSAFE_REMAINDER = re.compile(r"\.\.|\\|%2e|#", re.IGNORECASE)
+SEALING_SECRET_MIN = 32
+SEALING_CREDENTIAL = "sealing-secret"
+
+
+def load_sealing_secret(settings: Settings, env: dict | None = None) -> bytes | None:
+    """The sealing secret from settings.sealing_secret_file, else from $CREDENTIALS_DIRECTORY/sealing-secret
+    (systemd LoadCredential=), else None. Surrounding whitespace is ignored. A configured file that is
+    missing or shorter than 32 bytes stops the service rather than running without it."""
+    env = os.environ if env is None else env
+    path = settings.sealing_secret_file
+    if not path and env.get("CREDENTIALS_DIRECTORY"):
+        candidate = Path(env["CREDENTIALS_DIRECTORY"]) / SEALING_CREDENTIAL
+        path = str(candidate) if candidate.exists() else ""
+    if not path:
+        return None
+    try:
+        secret = Path(path).read_bytes().strip()
+    except OSError as exc:
+        raise ValueError(f"sealing secret {path} cannot be read ({exc.__class__.__name__})") from None
+    if len(secret) < SEALING_SECRET_MIN:
+        raise ValueError(f"sealing secret {path} is shorter than {SEALING_SECRET_MIN} bytes")
+    return secret
+
+
+# In what follows a prefix entry: no climbing out of the prefix once a client or browser normalises or
+# decodes the path ("..", backslashes, encoded dots, slashes and backslashes, a double-encoded %), no
+# path parameters and no fragment.
+_UNSAFE_REMAINDER = re.compile(r"\.\.|\\|%2e|%2f|%5c|%25|;|#", re.IGNORECASE)
 
 
 def redirect_allowed(uri: str, settings: Settings) -> bool:
@@ -189,11 +229,11 @@ def redirect_allowed(uri: str, settings: Settings) -> bool:
     if settings.allow_loopback_redirects and parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost", "::1"):
         return True
     for allowed in settings.redirect_allowlist:
-        if allowed.endswith("/"):
-            # The entry itself or anything under it, but nothing that could climb out of the prefix once
-            # a client or browser normalises the path ("..", backslashes, encoded dots) and no fragment.
-            if uri.startswith(allowed) and not _UNSAFE_REMAINDER.search(uri[len(allowed):]):
+        if allowed.endswith("*"):
+            # A prefix entry: the URL before the * or anything under it (see _UNSAFE_REMAINDER).
+            prefix = allowed[:-1]
+            if uri.startswith(prefix) and not _UNSAFE_REMAINDER.search(uri[len(prefix):]):
                 return True
-        elif uri == allowed:
+        elif uri == allowed:        # every other entry, a trailing slash included, matches exactly
             return True
     return False
