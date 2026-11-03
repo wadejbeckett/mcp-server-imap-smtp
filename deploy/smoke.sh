@@ -154,7 +154,7 @@ problems=()
 [[ "$(header login X-Frame-Options)" == DENY ]] || problems+=("X-Frame-Options not DENY")
 [[ "$(header login Content-Security-Policy)" == *"default-src 'none'"* ]] || problems+=("Content-Security-Policy missing or weak")
 [[ "$(header login Cache-Control)" == *no-store* ]] || problems+=("Cache-Control lacks no-store")
-[[ "$(header login Referrer-Policy)" == no-referrer ]] || problems+=("Referrer-Policy not no-referrer")
+[[ "$(header login Referrer-Policy)" == same-origin ]] || problems+=("Referrer-Policy not same-origin")
 if [[ $scheme == https ]]; then
     [[ "$(header login Strict-Transport-Security)" == *max-age=* ]] || problems+=("Strict-Transport-Security missing")
 fi
