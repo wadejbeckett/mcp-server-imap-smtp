@@ -67,18 +67,18 @@ class _Visible(HTMLParser):
         self.open: list[str] = []       # visible elements still open
         self.hidden_at = 0              # len(self.open) when the hidden element started
 
-    def handle_starttag(self, tag, attrs, closed=False):
+    def handle_starttag(self, tag, attrs):
         if self.hiding:
-            if tag not in _VOID and not closed:
+            if tag not in _VOID:
                 self.hiding.append(tag)
             return
         named = {k.lower(): v for k, v in attrs}
         if _hidden(tag, named):
-            if tag not in _VOID and not closed:
+            if tag not in _VOID:
                 self.hiding.append(tag)
                 self.hidden_at = len(self.open)
             return
-        if tag not in _VOID and not closed:
+        if tag not in _VOID:
             self.open.append(tag)
         kept = []
         for k, v in attrs:
@@ -92,7 +92,9 @@ class _Visible(HTMLParser):
         self.out.append(f"<{tag}{''.join(kept)}>")
 
     def handle_startendtag(self, tag, attrs):
-        self.handle_starttag(tag, attrs, closed=True)
+        # HTML ignores the slash on a non-void tag: <div style="display:none"/> stays open and hides what
+        # follows until an enclosing element closes, so it is treated as a start tag here too.
+        self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag):
         if self.hiding:
