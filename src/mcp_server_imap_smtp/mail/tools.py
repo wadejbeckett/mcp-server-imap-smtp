@@ -17,7 +17,7 @@ import threading
 import time
 from datetime import date
 from email.utils import getaddresses, parsedate_to_datetime
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
 
 import anyio
 from anyio import to_thread
@@ -25,6 +25,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
+from pydantic import AliasChoices, Field
 
 from .. import audit
 from ..config import Settings
@@ -37,9 +38,21 @@ from .imap import ImapClient, MailAuthError, MailBusy, MailError, SearchQuery
 log = logging.getLogger(__name__)
 from .sessions import ServerBusy, Sessions
 
-READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=False)
-WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
-SEND = ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True)
+# The four annotation sets of the tool-surface spec (docs: function catalogue B0). Every tool states all four
+# hints. READ never writes, not even a flag; WRITE makes only additive or reversible changes; DESTROY removes
+# or hides mail; OUTSIDE makes mail leave the mailbox.
+def _hints(read_only: bool, destructive: bool, idempotent: bool, open_world: bool) -> ToolAnnotations:
+    return ToolAnnotations(read_only_hint=read_only, destructive_hint=destructive, idempotent_hint=idempotent,
+                           open_world_hint=open_world)
+
+
+READ = _hints(True, False, True, False)
+WRITE_IDEMPOTENT = _hints(False, False, True, False)      # mail_flag: setting a flag twice changes nothing
+WRITE = _hints(False, False, False, False)                # mail_draft: each call saves another draft
+# mail_move moves mail to Trash (destination="trash") until mail_delete takes that job (ticket 12), so a
+# client may ask before it.
+DESTROY = _hints(False, True, False, False)
+OUTSIDE = _hints(False, True, False, True)                # mail_send
 ATTACH_CAP = 5_000_000
 THREAD_IDS = 20      # most recent message ids followed when looking for a conversation
 THREAD_ROWS = 50     # most recent messages listed per folder
@@ -428,7 +441,8 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         return await run("mail_folders", mailbox, work, count=lambda r: len(r["folders"]))
 
     @tool(READ)
-    async def mail_search(folder: str = "INBOX", text: str | None = None, from_: str | None = None,
+    async def mail_search(folder: str = "INBOX", text: str | None = None,
+                          from_: Annotated[str | None, Field(validation_alias=AliasChoices("from", "from_"))] = None,
                           to: str | None = None, subject: str | None = None, since: str | None = None,
                           before: str | None = None, unread: bool | None = None, flagged: bool | None = None,
                           limit: int = 25, offset: int = 0, mailbox: str | None = None) -> dict[str, Any]:
@@ -571,7 +585,8 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
                 raise MailError(f"no attachment at index {index}") from None
             if len(data) > ATTACH_CAP:
                 return {"filename": name, "content_type": ctype, "size": len(data), "note": "too large to return"}
-            if ctype.startswith("text/"):
+            if ctype.startswith("text/") or (ctype.startswith("message/")
+                                              and ctype not in ("message/rfc822", "message/global")):
                 try:
                     text = data.decode(charset or "utf-8", errors="replace")
                 except LookupError:      # a charset Python does not know
@@ -590,7 +605,7 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
             return {"content_notice": UNTRUSTED, **convert(raw)}
         return await run("mail_attachment", mailbox, work, folder, after=marked)
 
-    @tool(WRITE)
+    @tool(WRITE_IDEMPOTENT)
     async def mail_flag(folder: str, uids: list[int], seen: bool | None = None, flagged: bool | None = None,
                         answered: bool | None = None, mailbox: str | None = None) -> dict[str, Any]:
         """Mark messages read/unread, flagged/unflagged or answered."""
@@ -607,7 +622,7 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
             return {"updated": uids}
         return await run("mail_flag", mailbox, work, folder, count=lambda r: len(uids))
 
-    @tool(WRITE)
+    @tool(DESTROY)
     async def mail_move(folder: str, uids: list[int], destination: str, copy: bool = False,
                         mailbox: str | None = None) -> dict[str, Any]:
         """Move (or copy) messages to another existing folder. destination="trash" moves to the Trash folder
@@ -637,7 +652,8 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         """Save a draft in the Drafts folder. New draft: to + subject + text. With reply_to_folder and
         reply_to_uid it is a threaded reply that keeps the original subject with "Re:", so leave `subject`
         out. Replacing a draft moves the old one to Trash. Images in `html` (<img src> with an https URL or a
-        data: URI) are embedded in the message; other image sources are refused."""
+        data: URI) are embedded in the message; other image sources are refused. Returns the new draft's
+        `uid` (null when the server cannot say) and its `message_id`."""
         if (reply_to_folder is None) != (reply_to_uid is None):
             raise ToolError("a reply draft needs both reply_to_folder and reply_to_uid")
         if reply_to_folder is not None and subject is not None:
@@ -661,13 +677,19 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
                         _with_cc(m, cc)
                 else:
                     m = compose.new(a, to, subject, text, html, cc or (), fetch=fetch_image)
+                trash = None
+                if replace_draft_uid:
+                    trash = c.special("trash")
+                    if not trash:      # never create a Trash folder behind the user's back
+                        raise MailError("no trash folder found, so the old draft cannot be replaced; "
+                                        "save a new draft without replace_draft_uid")
                 drafts = c.special("drafts")
                 if not drafts:
                     drafts = c.ensure_folder("Drafts")
-                c.append(drafts, m.as_bytes(), ("\\Draft", "\\Seen"))
+                new_uid = c.append(drafts, m.as_bytes(), ("\\Draft", "\\Seen"), message_id=m["Message-ID"])
                 if replace_draft_uid:
-                    c.move(drafts, [replace_draft_uid], c.special("trash") or "Trash")
-            return {"saved_to": drafts, "subject": m["Subject"]}
+                    c.move(drafts, [replace_draft_uid], trash)
+            return {"saved_to": drafts, "uid": new_uid, "message_id": str(m["Message-ID"]), "subject": m["Subject"]}
         return await run("mail_draft", mailbox, work, count=lambda r: 1)
 
     # Per-grant send budgets, in memory (they restart with the process). One hit per message sent. Off
@@ -695,7 +717,7 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         if settings.send_max_recipients and count > settings.send_max_recipients:
             raise ValueError(f"Too many recipients ({count}); at most {settings.send_max_recipients} per message.")
 
-    @tool(SEND, enabled=settings.send_mode == "send")
+    @tool(OUTSIDE, enabled=settings.send_mode == "send")
     async def mail_send(to: list[str] | None = None, subject: str | None = None, text: str = "", html: str | None = None,
                         cc: list[str] | None = None, bcc: list[str] | None = None,
                         reply_to_folder: str | None = None, reply_to_uid: int | None = None, reply_all: bool = False,
@@ -706,7 +728,8 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         Forward: forward_folder + forward_uid + to. A reply or forward keeps the original subject ("Re:"/"Fwd:"),
         so `subject` is only for new messages; a forward is plain text, so `html` is not used there either.
         Images in `html` (<img src> with an https URL or a data: URI) are embedded in the message; other image
-        sources are refused. A copy is saved in Sent. Confirm with the user before sending."""
+        sources are refused. A copy is saved in Sent. Returns the message's `message_id`. Confirm with the user
+        before sending."""
         replying = reply_to_folder is not None or reply_to_uid is not None
         forwarding = forward_folder is not None or forward_uid is not None
         if replying and forwarding:
@@ -751,7 +774,8 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
                 # Not refunded on failure: an error after DATA may still have delivered the message.
                 accepted = sender(cred.server, a, cred.password, m, bcc=bcc or ())
                 # From here the mail is gone: nothing below may turn into an error, or the caller would retry.
-                out = {"sent_to": accepted, "subject": m["Subject"], "saved_to_sent": False}
+                out = {"sent_to": accepted, "subject": m["Subject"], "message_id": str(m["Message-ID"]),
+                       "saved_to_sent": False}
                 warnings = []
                 try:
                     sent = c.special("sent")

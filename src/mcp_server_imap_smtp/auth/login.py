@@ -30,6 +30,15 @@ log = logging.getLogger(__name__)
 DAY = 86400
 
 
+def wait_text(seconds: int) -> str:
+    """A limiter window as people read it: "15 minutes", "1 hour", "90 seconds"."""
+    for unit, size in (("hour", 3600), ("minute", 60)):
+        if seconds >= size and seconds % size == 0:
+            n = seconds // size
+            return f"{n} {unit}" + ("s" if n != 1 else "")
+    return f"{seconds} second" + ("s" if seconds != 1 else "")
+
+
 @dataclass
 class LoginLimits:
     """The sign-in limiters. `window` is the per-client (IPv6: per /64) and per-mailbox budget per
@@ -341,7 +350,9 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
     def net(request: Request) -> str:
         return client_network(request.client.host if request.client else None)
 
-    def too_many(redirect_uri: str, text: str = "Too many attempts. Try again in 15 minutes.") -> Response:
+    wait = wait_text(settings.login_window)     # the texts follow login_window, as Retry-After does
+
+    def too_many(redirect_uri: str, text: str = f"Too many attempts. Try again in {wait}.") -> Response:
         headers = {**security_headers(redirect_uri), "Retry-After": str(settings.login_window)}
         return Response(text, 429, headers=headers)
 
@@ -349,7 +360,7 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
         if entry.line is None:
             return too_many(redirect_uri)
         return too_many(redirect_uri, f"Too many failed sign-ins for {address} (line {entry.line}). "
-                                      "Try again in 15 minutes, or leave it out.")
+                                      f"Try again in {wait}, or leave it out.")
 
     async def verify(request: Request, entries: list[Entry], normalised: list[str], page_key: str, ip_key: str,
                      again: Callable, redirect_uri: str | None) -> tuple[list[Entry], list[str], list[MailServer]] | Response:
@@ -419,7 +430,7 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
         if blocked_hosts and any(s.host in blocked_hosts and not provider.store.known_mailbox(a, s.host)
                                  for a, s in zip(normalised, servers)):
             limiter.refund(ip_key)
-            return too_many(redirect_uri, "Too many failed sign-ins to this mail server. Try again in 15 minutes.")
+            return too_many(redirect_uri, f"Too many failed sign-ins to this mail server. Try again in {wait}.")
 
         # Passwords: the main mailbox alone first, so only someone who knows one password gets checks run in
         # parallel; then the rest, VERIFY_WORKERS at a time. A mailbox's attempt is reserved only when its own
@@ -712,7 +723,7 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
             return await again(problem)
         page_key = f"manage-subject:{subject}"      # by subject, so signing in again does not reset it
         if limits.request.blocked(f"req:{page_key}"):
-            return too_many(None, "Too many wrong passwords. Sign in again in 15 minutes.")
+            return too_many(None, f"Too many wrong passwords. Sign in again in {wait_text(settings.pending_ttl)}.")
         if not limiter.try_acquire([ip_key]):
             return too_many(None)
         checked = await verify(request, entries, normalised, page_key, ip_key, again, None)

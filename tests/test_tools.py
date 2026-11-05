@@ -113,8 +113,9 @@ class FakeImap:
     def move(self, folder, uids, dest, copy=False):
         self.calls.append(("move", folder, list(uids), dest, copy))
 
-    def append(self, folder, raw, flags):
+    def append(self, folder, raw, flags, message_id=None):
         self.calls.append(("append", folder, raw, tuple(flags)))
+        return 11
 
     def named(self, name):
         return [c for c in self.calls if c[0] == name]
@@ -575,7 +576,7 @@ async def test_draft_is_appended_to_drafts_with_draft_flag(env):
     m = message_from_bytes(raw)
     assert (folder, flags) == ("Drafts", ("\\Draft", "\\Seen"))
     assert (m["From"], m["To"], m["Cc"], m["Subject"]) == ("me@x.co.za", "c@x.co.za", "d@x.co.za", "Hi")
-    assert out == {"saved_to": "Drafts", "subject": "Hi"}
+    assert out == {"saved_to": "Drafts", "uid": 11, "message_id": m["Message-ID"], "subject": "Hi"}
 
 
 @pytest.mark.anyio
@@ -626,7 +627,7 @@ async def test_draft_reply_is_threaded_and_replaces_old_draft(env):
     m = message_from_bytes(fake.named("append")[0][2])
     assert m["In-Reply-To"] == "<9@x>" and m["To"] == "other@x.co.za" and m["Subject"] == "Re: Quote"
     assert fake.named("move") == [("move", "Drafts", [2], "Trash", False)]
-    assert out == {"saved_to": "Drafts", "subject": "Re: Quote"}
+    assert out == {"saved_to": "Drafts", "uid": 11, "message_id": m["Message-ID"], "subject": "Re: Quote"}
 
 
 @pytest.mark.anyio
@@ -772,7 +773,7 @@ async def test_send_refuses_header_injection(env):
 @pytest.mark.anyio
 async def test_send_succeeds_even_if_saving_to_sent_fails(env):
     class SentFails(FakeImap):
-        def append(self, folder, raw, flags):
+        def append(self, folder, raw, flags, message_id=None):
             raise MailError("APPEND failed: over quota")
     sender = FakeSender()
     srv, _ = build(env, SentFails(), sender)

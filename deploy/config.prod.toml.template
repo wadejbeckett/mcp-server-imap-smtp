@@ -36,8 +36,8 @@ allow_loopback_redirects = true
 # (30 and 120) would stop an office of more than 30 Claude users onboarding within 15 minutes, and
 # each connected user's hourly token refresh counts against /token. /authorize comes from each user's
 # browser (about two requests per sign-in), so an office behind one NAT address shares that budget.
-# Raise these before a larger onboarding (docs/DEPLOY.md, "Rate limits"). Unused registrations are
-# purged after 7 days.
+# Raise these before a larger onboarding (docs/DEPLOY.md, "Rate limits"). Dynamically registered
+# clients that never complete a sign-in are purged after 24 hours.
 register_limit = 300
 token_limit = 1200
 authorize_limit = 120

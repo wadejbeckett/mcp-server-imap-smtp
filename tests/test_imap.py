@@ -66,7 +66,7 @@ def test_append_search_read_flag_move(mailserver):
         assert b"R4053.75" in c.fetch_raw(TEST_FOLDER, uid)
         c.set_flags(TEST_FOLDER, [uid], add=["\\Seen", "\\Flagged"], remove=[])
         assert c.search(TEST_FOLDER, SearchQuery(subject=tag, flagged=True))[0] == 1
-        dest = child(c, "Archive-Test")
+        dest = c.ensure_folder(child(c, "Archive-Test"))      # move never creates its destination
         c.move(TEST_FOLDER, [uid], dest)
         assert c.search(dest, SearchQuery(subject=tag))[0] == 1
 
@@ -76,10 +76,31 @@ def test_folder_roundtrip_nonascii(mailserver):
         tag = tagged("x")
         c.append(TEST_FOLDER, msg(tag), ())
         uid = c.search(TEST_FOLDER, SearchQuery(subject=tag))[1][0]["uid"]
-        dest = child(c, "Entwürfe ✓")
+        dest = c.ensure_folder(child(c, "Entwürfe ✓"))
         c.move(TEST_FOLDER, [uid], dest)
         assert any(f.name == dest for f in c.folders())
         assert c.search(dest, SearchQuery(subject=tag))[0] == 1
+
+def test_append_returns_the_new_uid(mailserver):
+    with session(mailserver) as c:
+        c.ensure_folder(TEST_FOLDER)
+        tag, mid = tagged("uid"), f"<{time.time_ns()}@t>"
+        uid = c.append(TEST_FOLDER, msg(tag, mid=mid), (), message_id=mid)
+        assert [r["uid"] for r in c.search(TEST_FOLDER, SearchQuery(subject=tag))[1]] == [uid]
+
+
+def test_move_to_a_missing_folder_is_refused_and_creates_nothing(mailserver):
+    with session(mailserver) as c:
+        c.ensure_folder(TEST_FOLDER)
+        tag = tagged("nowhere")
+        uid = c.append(TEST_FOLDER, msg(tag), ())
+        missing = child(c, f"missing-{time.time_ns()}")
+        with pytest.raises(MailError, match="does not exist"):
+            c.move(TEST_FOLDER, [uid], missing)
+        c._folders = None
+        assert not any(f.name == missing for f in c.folders())
+        assert c.search(TEST_FOLDER, SearchQuery(subject=tag))[0] == 1
+
 
 def test_fetch_refuses_oversize(mailserver):
     with session(mailserver) as c:

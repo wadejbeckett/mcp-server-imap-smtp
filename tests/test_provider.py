@@ -262,3 +262,26 @@ async def test_refused_registration_is_logged_with_client_name(prov, caplog):
     assert rec.levelno == logging.WARNING
     assert "https://new.ai/cb" in rec.getMessage() and "NewAI" in rec.getMessage()
     assert "s3cr3t" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_refresh_reuse_within_the_retry_grace_is_refused_but_keeps_the_grant(prov):
+    c, tok = await tokens(prov)
+    new = await prov.exchange_refresh_token(c, await prov.load_refresh_token(c, tok.refresh_token), [])
+    assert await prov.load_refresh_token(c, tok.refresh_token) is None          # refused
+    assert await prov.load_refresh_token(c, new.refresh_token) is not None      # the grant lives on
+
+
+@pytest.mark.anyio
+async def test_refresh_reuse_after_the_grace_revokes_the_grant(prov, monkeypatch):
+    """RFC 9700 section 4.14.2: a rotated-out refresh token presented again ends the grant, so an attacker
+    who refreshed first loses it too."""
+    import time as time_mod
+    from mcp_server_imap_smtp.auth import provider as provider_mod
+    c, tok = await tokens(prov)
+    new = await prov.exchange_refresh_token(c, await prov.load_refresh_token(c, tok.refresh_token), [])
+    later = time_mod.time() + provider_mod.REFRESH_RETRY_GRACE + 1
+    monkeypatch.setattr(time_mod, "time", lambda: later)
+    assert await prov.load_refresh_token(c, tok.refresh_token) is None
+    assert await prov.load_refresh_token(c, new.refresh_token) is None          # every token of the grant ended
+    assert await prov.load_access_token(new.access_token) is None

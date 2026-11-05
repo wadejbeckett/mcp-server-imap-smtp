@@ -21,11 +21,11 @@ class ScriptedServer(threading.Thread):
     """A minimal SMTP server: 220, EHLO, AUTH PLAIN/LOGIN, MAIL, RCPT, DATA, QUIT."""
 
     def __init__(self, sock, *, password=SECRET, auth_code=None, mechs="PLAIN LOGIN", greeting="220 mail.test ESMTP",
-                 mail_code="250 OK", refuse=(), data_code="250 queued", hang_up_after=None):
+                 mail_code="250 OK", refuse=(), data_code="250 queued", hang_up_after=None, extensions="8BITMIME"):
         super().__init__(daemon=True)
         self.sock, self.password, self.auth_code, self.mechs = sock, password, auth_code, mechs
         self.greeting, self.mail_code, self.refuse, self.data_code = greeting, mail_code, set(refuse), data_code
-        self.hang_up_after = hang_up_after
+        self.hang_up_after, self.extensions = hang_up_after, extensions
         self.commands, self.rcpts, self.data, self.credentials = [], [], b"", None
         self.quit_seen = False
         self.sock.settimeout(10)
@@ -61,7 +61,8 @@ class ScriptedServer(threading.Thread):
                 verb = line.upper()
                 if verb.startswith("EHLO"):
                     self.ehlo_name = line.split(" ", 1)[1]
-                    self.sock.sendall(f"250-mail.test\r\n250-8BITMIME\r\n250 AUTH {self.mechs}\r\n".encode())
+                    ext = "".join(f"250-{e}\r\n" for e in self.extensions.split())
+                    self.sock.sendall(f"250-mail.test\r\n{ext}250 AUTH {self.mechs}\r\n".encode())
                 elif verb.startswith("AUTH PLAIN"):
                     self._plain(line.split(" ", 2)[2])
                     self._auth_result()
@@ -317,3 +318,24 @@ def test_bad_credentials_replies_are_autherror(wire, mechs, reply):
     with pytest.raises(MailAuthError):
         smtp.send(mail_server, ADDR, "plain-secret", msg())
     assert client.fileno() == -1
+
+
+def test_eight_bit_body_declares_8bitmime(wire):
+    client, server, mail_server = wire()
+    smtp.send(mail_server, ADDR, SECRET, msg(text="Héllo wörld"))
+    server.join(timeout=5)
+    assert server.mail_from.upper().endswith(" BODY=8BITMIME")
+
+
+def test_ascii_body_sends_no_body_parameter(wire):
+    client, server, mail_server = wire()
+    smtp.send(mail_server, ADDR, SECRET, msg(text="plain ascii"))
+    server.join(timeout=5)
+    assert "BODY=" not in server.mail_from.upper()
+
+
+def test_no_8bitmime_parameter_when_the_server_does_not_offer_it(wire):
+    client, server, mail_server = wire(extensions="")
+    smtp.send(mail_server, ADDR, SECRET, msg(text="Héllo wörld"))
+    server.join(timeout=5)
+    assert "BODY=" not in server.mail_from.upper()

@@ -261,11 +261,10 @@ def test_find_by_message_id_and_flags_and_move_and_append():
     assert [a for a, _ in uid_calls(stub, "STORE")] == [("4,8", "+FLAGS.SILENT", "(\\Seen)"),
                                                        ("4,8", "-FLAGS.SILENT", "(\\Flagged)")]
     c.move("INBOX", [4], "Entwürfe ✓")
-    assert ("create", ('"Entw&APw-rfe &JxM-"',), None) in stub.calls
     assert uid_calls(stub, "MOVE")[0][0] == ("4", '"Entw&APw-rfe &JxM-"')
     c.move("INBOX", [4], "INBOX", copy=True)
     assert uid_calls(stub, "COPY")[0][0] == ("4", '"INBOX"')
-    assert [k for k, *_ in stub.calls].count("create") == 1
+    assert [k for k, *_ in stub.calls].count("create") == 0     # move never creates the destination
     c.append("INBOX", b"raw", ("\\Seen",))
     assert stub.calls[-1][:2] == ("append", ('"INBOX"', "(\\Seen)", b"raw"))
     c.append("INBOX", b"raw", ())
@@ -658,7 +657,7 @@ def test_move_append_select_use_resolved_name():
     c, stub = client(namespace=NS_PLESK, list=("OK", LIST_PLESK), create=("OK", [None]),
                      append=("OK", [None]), **{"uid MOVE": ("OK", [None])})
     c.move("INBOX", [3], "Trash")
-    assert ("create", ('"INBOX.Trash"',), None) in stub.calls
+    assert "create" not in [k for k, *_ in stub.calls]
     assert uid_calls(stub, "MOVE")[0][0] == ("3", '"INBOX.Trash"')
     c.append("Archive", b"x", ())
     assert [a[0] for k, a, _ in stub.calls if k == "append"] == ['"INBOX.Archive"']
@@ -757,3 +756,32 @@ def test_namespace_listed_only_after_login_is_still_used():
     stub.capabilities = ("IMAP4REV1", "SASL-IR", "AUTH=PLAIN")
     assert c.namespaces()["personal"] == [["INBOX.", "."]]
     assert c.resolve_folder("mcp-imap-smtp-tests") == "INBOX.mcp-imap-smtp-tests"
+
+
+def test_move_to_a_missing_folder_reports_trycreate_and_creates_nothing():
+    c, stub = client(**{"uid MOVE": ("NO", [b"[TRYCREATE] Mailbox doesn't exist: Nope"])},
+                     list=("OK", [rb'(\HasNoChildren) "." INBOX']), create=("OK", [None]))
+    with pytest.raises(MailError, match=r"MOVE failed: the folder does not exist \[TRYCREATE\]"):
+        c.move("INBOX", [4], "Nope")
+    assert "create" not in [k for k, *_ in stub.calls]
+
+
+def test_append_returns_the_uid_from_appenduid():
+    c, stub = client(list=("OK", [rb'(\HasNoChildren) "." INBOX']),
+                     append=("OK", [b"[APPENDUID 1730000000 42] Append completed."]))
+    assert c.append("INBOX", b"raw", ("\\Seen",), message_id="<m@x>") == 42
+    assert not uid_calls(stub, "SEARCH")            # no search needed with UIDPLUS
+
+
+def test_append_without_uidplus_finds_the_uid_by_message_id():
+    c, stub = client(**{"uid SEARCH": ("OK", [b"7 9"])}, list=("OK", [rb'(\HasNoChildren) "." INBOX']),
+                     append=("OK", [b"Append completed."]))
+    assert c.append("INBOX", b"raw", (), message_id="<m@x>") == 9
+    assert uid_calls(stub, "SEARCH")[0][0] == ("HEADER", "Message-ID", '"<m@x>"')
+    assert c.append("INBOX", b"raw", ()) is None      # no Message-ID to look for
+
+
+def test_append_uid_search_failure_is_not_an_error():
+    c, _ = client(**{"uid SEARCH": ("NO", [b"busy"])}, list=("OK", [rb'(\HasNoChildren) "." INBOX']),
+                  append=("OK", [None]))
+    assert c.append("INBOX", b"raw", (), message_id="<m@x>") is None

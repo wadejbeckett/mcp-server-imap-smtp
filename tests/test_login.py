@@ -831,3 +831,18 @@ def test_an_untrusted_mail_server_certificate_is_logged(caplog, monkeypatch):
         imap_verifier("me@x.co.za", "s3cret-pw", MAIL1)
     assert "could not reach mail1.hosting.example: unable to get local issuer certificate" in caplog.text
     assert "s3cret-pw" not in caplog.text and "me@x.co.za" not in caplog.text
+
+
+@pytest.mark.parametrize("seconds, text", [(900, "15 minutes"), (60, "1 minute"), (3600, "1 hour"),
+                                           (7200, "2 hours"), (90, "90 seconds"), (1, "1 second")])
+def test_wait_text(seconds, text):
+    from mcp_server_imap_smtp.auth.login import wait_text
+    assert wait_text(seconds) == text
+
+
+def test_lockout_text_follows_login_window(tmp_path):
+    c, req, _, _ = make_env(tmp_path, login_window=3600)
+    for _ in range(3):
+        c.post("/mail/login", data={"req": req, "email": "me@x.co.za", "password": "bad"})
+    r = c.post("/mail/login", data={"req": req, "email": "me@x.co.za", "password": "pw"})
+    assert r.status_code == 429 and "Try again in 1 hour." in r.text and "15 minutes" not in r.text

@@ -24,6 +24,9 @@ from ..store import Store
 from .cimd import cimd_fetchable, fetch_client_document, is_cimd
 
 log = logging.getLogger(__name__)
+# Seconds after a refresh token is rotated during which presenting it again is refused but does not end the
+# grant (a retried request or two sessions of one client racing); after that, reuse revokes the grant.
+REFRESH_RETRY_GRACE = 30
 
 CIMD_TTL = 86400
 CIMD_FAILURE_TTL = 60
@@ -261,12 +264,13 @@ class GatewayProvider:
     async def load_refresh_token(self, client, refresh_token: str) -> RefreshToken | None:
         rec = self.store.load_token(refresh_token, "refresh")
         if not rec:
-            # A rotated-out refresh token used again may mean two parties hold the grant (RFC 9700 section
-            # 4.14.2), or a client whose sessions share one stored credential. Logged, not revoked, until
-            # live traffic shows which: revoking would cut off legitimate multi-session clients.
-            spent = self.store.spent_grant(refresh_token, "refresh")
-            if spent:
-                log.warning("rotated-out refresh token presented again (grant %s); refused, not revoked", spent)
+            # A rotated-out refresh token used again means two parties may hold the grant. The server cannot
+            # tell the attacker from the client, so it ends the grant and every token issued from it (RFC 9700
+            # section 4.14.2); the user signs in again. Within REFRESH_RETRY_GRACE of the rotation it is only
+            # refused: a client that lost the response, or two of its sessions refreshing at once.
+            revoked = self.store.replayed_grant(refresh_token, "refresh", grace=REFRESH_RETRY_GRACE)
+            if revoked:
+                log.warning("rotated-out refresh token presented again: grant %s revoked", revoked)
             return None
         if rec.client_id != client.client_id:
             return None

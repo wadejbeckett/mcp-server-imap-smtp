@@ -41,7 +41,7 @@ The full reference is in [docs/RUNNING.md](docs/RUNNING.md), "Mail servers".
 
 Users can add or remove mailboxes, or enter a changed password, later on the connector's manage page (`<mail URL>/manage`), without reconnecting their AI app.
 
-**Tools:** `mail_accounts`, `mail_folders`, `mail_search` (one mailbox or all of them), `mail_read`, `mail_thread`, `mail_attachment` (text and PDF), `mail_flag`, `mail_move` (never deletes permanently), `mail_draft` and `mail_send`. Sending can be turned off or limited to drafts (`send_mode`). Images in an HTML body (an `<img>` whose source is an https URL or a `data:` URI) are fetched or decoded and sent inside the message as inline `cid:` parts, so mail clients show them without loading remote content; any other image source is refused.
+**Tools:** `mail_accounts`, `mail_folders`, `mail_search` (one mailbox or all of them), `mail_read`, `mail_thread`, `mail_attachment` (text and PDF), `mail_flag`, `mail_move` (never deletes permanently), `mail_draft` (returns the saved draft's UID and Message-ID) and `mail_send` (returns the Message-ID). Sending can be turned off or limited to drafts (`send_mode`). Images in an HTML body (an `<img>` whose source is an https URL or a `data:` URI) are fetched or decoded and sent inside the message as inline `cid:` parts, so mail clients show them without loading remote content; any other image source is refused.
 
 **AI apps:** any MCP client that supports remote servers with OAuth. The user guide template for your customers, [docs/CONNECT.template.md](docs/CONNECT.template.md), has set-up steps for Claude (web, desktop, mobile and Claude Code), ChatGPT, Grok and Codex. Cursor connects too.
 

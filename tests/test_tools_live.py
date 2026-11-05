@@ -111,8 +111,10 @@ async def test_send_read_flag_reply_thread_move(live):
     t = tag("tools")
     sent = await call(srv, "mail_send", to=[addr], subject=t, text="hello from the tools integration test")
     assert sent["sent_to"] == [addr] and sent["saved_to_sent"] is True and "warning" not in sent
+    assert sent["message_id"].startswith("<") and sent["message_id"].endswith(">")
 
     inbox = await find(srv, "INBOX", t)
+    assert inbox["message_id"] == sent["message_id"]
     await call(srv, "mail_move", folder="INBOX", uids=[inbox["uid"]], destination=TEST_FOLDER)
     row = await find(srv, TEST_FOLDER, t)
     uid = row["uid"]
@@ -151,10 +153,12 @@ async def test_draft_then_replace_it(live):
     drafts = first["saved_to"]
     row = await find(srv, drafts, t)
     assert "\\Draft" in row["flags"]
+    assert first["uid"] == row["uid"] and first["message_id"] == row["message_id"]     # APPENDUID or search
     second = await call(srv, "mail_draft", to=[addr], subject=t, text="second draft", replace_draft_uid=row["uid"])
     assert second["saved_to"] == drafts
     out = await call(srv, "mail_search", folder=drafts, subject=t)
     assert out["total"] == 1 and out["messages"][0]["uid"] != row["uid"]
+    assert out["messages"][0]["uid"] == second["uid"]
 
 
 @pytest.mark.anyio

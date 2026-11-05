@@ -434,7 +434,8 @@ class Store:
         more than 30 days ago (aged from `created` when revoked_at is unknown), with their sealed mailboxes;
         abandoned grants (not revoked, created more than refresh_ttl ago, no token or code left, so nothing
         can ever unlock them again), with their sealed mailboxes; and dynamically registered clients
-        (client_id not an https URL) created more than 7 days ago that hold no grant. refresh_ttl=None skips
+        (client_id not an https URL) created more than UNUSED_CLIENT_KEEP (24 hours) ago that hold no grant;
+        clients identified by an https metadata document (CIMD) are not purged by this rule. refresh_ttl=None skips
         the abandoned-grant rule. Returns the counts."""
         now = time.time() if now is None else now
         with self._tx():

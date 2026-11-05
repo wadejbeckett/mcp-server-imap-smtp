@@ -175,19 +175,28 @@ def _get_body_text(body: EmailMessage | None, links: list[str] | None = None) ->
 
 
 def _get_attachment_data(part: EmailMessage) -> bytes:
-    """Extract attachment data, handling message/rfc822 parts."""
-    if part.get_content_type() == "message/rfc822":
-        # For forwarded messages, get the serialized inner message
+    """The bytes of one attachment. message/rfc822 (and message/global) is the serialised inner message;
+    any other message/* part (delivery-status, disposition-notification, global-delivery-status,
+    global-headers) is the body of the part as it was sent, not the empty result of decoding a parsed
+    header block (D3 of the 2026-11-04 content research)."""
+    ctype = part.get_content_type()
+    if ctype in ("message/rfc822", "message/global") and isinstance(part.get_payload(), list):
         inner_msg = part.get_payload(0)
         return inner_msg.as_bytes() if inner_msg else b""
-    else:
-        return part.get_payload(decode=True) or b""
+    if part.get_content_maintype() == "message":
+        whole = part.as_bytes()
+        for sep in (b"\r\n\r\n", b"\n\n"):
+            head, found, body = whole.partition(sep)
+            if found:
+                return body
+        return b""
+    return part.get_payload(decode=True) or b""
 
 
 def _size(part: EmailMessage) -> int:
     """The decoded size of an attachment, worked out from its encoded form so a large message's attachments
     are not all decoded just to list them (security review 2026-10-20, A9)."""
-    if part.get_content_type() == "message/rfc822" or part.is_multipart():
+    if part.get_content_maintype() == "message" or part.is_multipart():
         return len(_get_attachment_data(part))
     payload = part.get_payload(decode=False)
     if not isinstance(payload, str):
@@ -201,8 +210,76 @@ def _size(part: EmailMessage) -> int:
     return len(payload.encode("utf-8", "surrogateescape"))
 
 
+def _bodies(msg: EmailMessage) -> tuple[EmailMessage | None, EmailMessage | None]:
+    return msg.get_body(preferencelist=("plain",)), msg.get_body(preferencelist=("html",))
+
+
 def _attachments(msg: EmailMessage) -> list[EmailMessage]:
-    return list(msg.iter_attachments())
+    """Every leaf of the MIME tree except the message's text: the body part get_body chooses and the other
+    text versions of it in the same multipart/alternative (with the HTML root of a multipart/related
+    there). Unlike the stdlib's iter_attachments this descends into nested multiparts, so a PDF inside a
+    signed or list-relayed message is listed (D10), a text/calendar beside the body in an alternative is
+    listed (D2), and a single-part message that is not text (an S/MIME application/pkcs7-mime) lists
+    itself (D1). A message/* part is one leaf and is not descended."""
+    plain, html = _bodies(msg)
+    body = plain if plain is not None else html
+    leaves: list[tuple[EmailMessage, tuple[EmailMessage, ...]]] = []
+
+    def visit(part: EmailMessage, path: tuple[EmailMessage, ...]) -> None:
+        if part.get_content_maintype() == "multipart":
+            for sub in part.iter_parts():
+                visit(sub, path + (part,))
+            return
+        leaves.append((part, path))
+
+    visit(msg, ())
+    body_path = next((path for part, path in leaves if part is body), ())
+    alternatives = {id(p) for p in body_path if p.get_content_subtype() == "alternative"}
+
+    def is_text_version(part: EmailMessage, path: tuple[EmailMessage, ...]) -> bool:
+        if part.get_content_type() not in ("text/plain", "text/html") or part.get_filename():
+            return False
+        for i, ancestor in enumerate(path):
+            if id(ancestor) in alternatives:
+                below = path[i + 1:]       # nothing but a related wrapper whose root this part is
+                return all(r.get_content_subtype() == "related" and next(r.iter_parts(), None) is
+                           (below[j + 1] if j + 1 < len(below) else part) for j, r in enumerate(below))
+        return False
+
+    return [part for part, path in leaves if part is not body and not is_text_version(part, path)]
+
+
+_FLOWED_QUOTE = re.compile(r"^>+")
+
+
+def _unflow(text: str, delsp: bool) -> str:
+    """Join the soft line breaks of a format=flowed body (RFC 3676 section 4.1): a line ending in a space
+    continues on the next line of the same quote depth. The "-- " signature separator is never joined, and
+    space-stuffing is removed."""
+    out: list[str] = []
+    pending: str | None = None
+    pending_depth = -1
+    for line in text.splitlines():
+        m = _FLOWED_QUOTE.match(line)
+        depth = len(m.group(0)) if m else 0
+        content = line[depth:]
+        if content.startswith(" "):
+            content = content[1:]
+        soft = content.endswith(" ") and content != "-- "
+        if pending is not None and depth != pending_depth:
+            out.append(pending)
+            pending = None
+        if pending is None:
+            pending, pending_depth = (">" * depth + (" " if depth else "")), depth
+        if soft and delsp:
+            content = content[:-1]
+        pending += content
+        if not soft:
+            out.append(pending)
+            pending = None
+    if pending is not None:
+        out.append(pending)
+    return "\n".join(out)
 
 
 def summarise(raw: bytes, body_cap: int = 50_000) -> dict:
@@ -211,15 +288,17 @@ def summarise(raw: bytes, body_cap: int = 50_000) -> dict:
     # Try plain text first, then HTML
     text = ""
     links: list[str] = []
-    plain_body = msg.get_body(preferencelist=("plain",))
+    plain_body, html_body = _bodies(msg)
     if plain_body is not None:
-        plain_text = _get_body_text(plain_body).strip()
+        plain_text = _get_body_text(plain_body)
+        if plain_body.get_param("format", "").lower() == "flowed":
+            plain_text = _unflow(plain_text, plain_body.get_param("delsp", "").lower() == "yes")
+        plain_text = plain_text.strip()
         if plain_text:
             text = plain_text
 
     # If plain text is empty/blank, try HTML
     if not text:
-        html_body = msg.get_body(preferencelist=("html",))
         if html_body is not None:
             text = _get_body_text(html_body, links)
 

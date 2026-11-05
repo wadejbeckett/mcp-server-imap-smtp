@@ -185,6 +185,7 @@ def _drop(conn) -> None:
 
 
 _RESP_CODE = re.compile(r"\s*\[([A-Za-z-]+)")
+_APPENDUID = re.compile(rb"\[APPENDUID (\d+) (\d+)\]", re.IGNORECASE)
 _CODE_REASONS = {
     "NONEXISTENT": "it does not exist", "TRYCREATE": "the folder does not exist",
     "ALREADYEXISTS": "it already exists", "NOPERM": "no permission", "OVERQUOTA": "the mailbox is over quota",
@@ -544,13 +545,15 @@ class ImapClient:
                 return item[1]
         raise MailError(f"message {uid} not found in {folder}")
 
-    def find_by_message_id(self, folder: str, message_id: str) -> list[int]:
+    def find_by_message_id(self, folder: str, message_id: str, references: bool = True) -> list[int]:
+        """UIDs of the messages with this Message-ID and, with references=True, those that refer to it."""
         if not message_id.isascii():
             raise MailError("message id must be ASCII")
         quoted = _quote(message_id)
         self._select(folder, readonly=True)
-        data = self._ok(*self.c.uid("SEARCH", "OR", "HEADER", "Message-ID", quoted,
-                                     "HEADER", "References", quoted), "SEARCH")
+        crit = (["OR", "HEADER", "Message-ID", quoted, "HEADER", "References", quoted] if references
+                else ["HEADER", "Message-ID", quoted])
+        data = self._ok(*self.c.uid("SEARCH", *crit), "SEARCH")
         return [int(u) for u in (data[0] or b"").split()]
 
     # changes
@@ -573,13 +576,28 @@ class ImapClient:
         return name
 
     def move(self, folder: str, uids: list[int], dest: str, copy: bool = False) -> None:
+        """Move or copy to an existing folder. A missing one is never created here: the server's [TRYCREATE]
+        comes back as "the folder does not exist"."""
         seq = _uid_seq(uids)
-        target = _mbox(self.ensure_folder(dest))
+        target = _mbox(self.resolve_folder(dest))
         self._select(folder, readonly=False)
         self._ok(*self.c.uid("COPY" if copy else "MOVE", seq, target), "COPY" if copy else "MOVE")
 
-    def append(self, folder: str, raw: bytes, flags: tuple[str, ...]) -> None:
+    def append(self, folder: str, raw: bytes, flags: tuple[str, ...], message_id: str | None = None) -> int | None:
+        """APPEND a message; returns its UID: from APPENDUID (RFC 4315 UIDPLUS) when the server sends it, else,
+        given the message's Message-ID, from a search for it (the newest match), else None."""
         _check_flags(flags)
         folder = self.resolve_folder(folder)
-        self._ok(*self.c.append(_mbox(folder), "(" + " ".join(flags) + ")" if flags else None,
-                                imaplib.Time2Internaldate(time.time()), raw), "APPEND")
+        data = self._ok(*self.c.append(_mbox(folder), "(" + " ".join(flags) + ")" if flags else None,
+                                       imaplib.Time2Internaldate(time.time()), raw), "APPEND")
+        text = data[0] if data and isinstance(data[0], bytes) else b""
+        m = _APPENDUID.search(text)
+        if m:
+            return int(m.group(2))
+        if not message_id or not str(message_id).isascii():
+            return None
+        try:
+            found = self.find_by_message_id(folder, str(message_id), references=False)
+        except (MailError, imaplib.IMAP4.error):
+            return None
+        return max(found) if found else None

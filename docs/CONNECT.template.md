@@ -121,7 +121,7 @@ If a staff member changes their password, the other mailboxes keep working and t
 
 - **The AI sees what it reads.** Anything it opens goes to the company behind your AI app, under its privacy terms.
 - **Sending.** {{product}} marks sending as an action that needs your approval and tells the AI to confirm with you first. Most AI apps ask before sending. They stop asking if you set the app to "always allow" or "allow all". Read every message before approving it. If your app sends without asking, tell it to show you each message first. If your app refuses to send, ask for a draft instead.
-- **Drafting, flagging and moving mail, including to Trash,** don't need your approval, so they may happen without asking.
+- **Moving mail** is marked as an action that can remove mail from a folder (it can move mail to Trash), so many AI apps ask before moving. **Drafting and flagging** don't need your approval, so they may happen without asking.
 - **Mail is sent from the mailbox you're working in.** A copy is normally saved in its Sent folder. If the copy can't be saved, the message still goes and {{product}} tells the AI.
 - **{{product}} never deletes mail permanently.** "Delete" moves mail to Trash, where you can restore it until Trash is emptied.
 - **Your password is stored encrypted** and can only be unlocked by your own connection. The AI never sees it.
@@ -137,10 +137,10 @@ If a staff member changes their password, the other mailboxes keep working and t
 
 ## Troubleshooting
 
-- **"Address or password incorrect."** Use your full email address and mail password. After 5 wrong attempts, sign-in pauses for up to 15 minutes. The pause can affect everyone on your office connection.
+- **"Address or password incorrect."** Use your full email address and mail password. After 5 wrong attempts, sign-in pauses for a while (15 minutes unless your provider set another time); the page says how long. The pause can affect everyone on your office connection.
 - **"Line 12 (name@example.com): this mailbox is already listed with another password."** The same mailbox is in the list twice with different passwords. Remove the wrong line and paste the whole list again.
 - **"Line 12 (name@example.com): address or password incorrect."** The password on that line of your list is wrong. Nothing was connected. Fix that line and paste the whole list again.
-- **"Too many failed sign-ins for name@example.com (line 12)."** That mailbox has had too many wrong passwords recently. Wait 15 minutes, or leave that line out and add the mailbox later.
+- **"Too many failed sign-ins for name@example.com (line 12)."** That mailbox has had too many wrong passwords recently. Wait the time the page names, or leave that line out and add the mailbox later.
 - **"Mail for example.com is not hosted by {{operator}}."** That address is not on a mail server we run. Check the address for typing mistakes. If it is correct, contact us.
 - **Asked to reconnect, or a Reconnect button appears.** A password has probably changed, or the connection hasn't been used for a while. Click **Reconnect**. If there is no Reconnect button, disconnect and connect again.
 - **"The mail server could not be reached."** Try again shortly, and tell us if it continues.
