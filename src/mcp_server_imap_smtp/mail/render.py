@@ -556,10 +556,16 @@ class _Quotable(HTMLParser):
         return "".join(self.out) + "".join(f"</{t}>" for t in reversed(self.open))
 
 
-def quotable_html(raw: bytes) -> str:
-    """The original message's body as safe HTML to quote, from the same part summarise() reads: the plain text
-    (escaped, line breaks kept) when it has any, else the HTML part through the allowlist above. An HTML
-    alternative that says something else than the plain part is never quoted, since the AI never saw it."""
+def quotable_html(raw: bytes, body_cap: int = 50_000) -> str:
+    """The original message's body as safe HTML to quote, from exactly what summarise() showed the AI: its
+    plain text (escaped, line breaks kept) when it has any, else the HTML part through the allowlist above.
+    An HTML alternative that says something else than the plain part is never quoted, and a body the AI saw
+    only in part (cut at body_cap) is quoted as that cut text, marked [truncated]."""
+    o = summarise(raw, body_cap)
+    def escaped(text: str) -> str:
+        return html_lib.escape(text, quote=False).replace("\n", "<br>\n")
+    if o["truncated"]:
+        return escaped(o["text"]) + "<br>\n[truncated]"
     _, html, text = _choose(_parse(raw))
     if html is not None and not text:      # the HTML only when it is what summarise() showed the AI
         try:
@@ -572,4 +578,4 @@ def quotable_html(raw: bytes) -> str:
         quoted = q.result()
         if quoted.strip():
             return quoted
-    return html_lib.escape(text, quote=False).replace("\n", "<br>\n")
+    return escaped(o["text"])

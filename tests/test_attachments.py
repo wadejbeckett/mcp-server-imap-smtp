@@ -705,3 +705,20 @@ def test_unusable_charset_from_stored_mail_is_left_out():
     m = compose.new("me@x.co.za", ["a@b.co"], "Hi", "body",
                     files=[compose.file("a.txt", "text/plain", b"x", charset="utf-8\r\nX-Evil: 1")])
     assert b"X-Evil" not in m.as_bytes()
+
+
+def test_unusable_charset_keeps_the_content_type():
+    m = parse(compose.new("me@x.co.za", ["a@b.co"], "Hi", "body",
+                          files=[compose.file("a.csv", "text/csv", b"a,b\n", charset="utf-8\r\nbcc: x@y")]).as_bytes())
+    part, = m.iter_attachments()
+    assert (part.get_content_type(), part.get_param("name"), part.get_param("charset")) == ("text/csv", "a.csv", None)
+    ok = compose.file("a.csv", "text/csv", b"a", charset="iso-8859-1")
+    assert ok.charset == "iso-8859-1"
+
+
+def test_quote_stops_where_the_ai_text_stopped():
+    orig = raw_message(body="A" * 60_000 + " TAIL-UNSEEN")
+    quoted = render.quotable_html(orig)
+    assert "TAIL-UNSEEN" not in quoted and quoted.endswith("[truncated]")
+    html_orig = _alternative(b"", b"<p>" + b"B " * 30_000 + b"</p><p>TAIL-UNSEEN</p>")
+    assert "TAIL-UNSEEN" not in render.quotable_html(html_orig)

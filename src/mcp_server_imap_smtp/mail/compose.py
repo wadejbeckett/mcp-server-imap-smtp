@@ -64,6 +64,7 @@ class File:
 _TOKEN = r"[a-z0-9][a-z0-9!#$&^_.+-]{0,126}"
 _CTYPE = re.compile(f"{_TOKEN}/{_TOKEN}")
 _CID = re.compile(r"[\x21-\x3b\x3d\x3f-\x7e]{1,250}")      # printable ASCII without < > and space
+_CHARSET = re.compile(r"[A-Za-z0-9!#$%&'+^_`{}~.-]{1,64}")    # an RFC 2978 charset name
 MAX_FILENAME = 255
 
 
@@ -91,6 +92,8 @@ def file(filename: str | None, content_type: str | None, data: bytes, dispositio
         cid = content_id.strip().strip("<>").strip()
         if not _CID.fullmatch(cid):
             raise MailError(f"attachment {name!r}: content_id must be printable ASCII without spaces or <>")
+    if charset is not None and not _CHARSET.fullmatch(charset):
+        charset = None           # a charset taken from stored mail that cannot be a parameter: leave it out
     return File(name, ctype, data, disp, cid, charset)
 
 
@@ -127,10 +130,7 @@ def _add_file(m: EmailMessage, f: File) -> None:
     part = m.get_payload()[-1]
     part.set_param("name", f.filename)           # older clients read the name from Content-Type
     if f.charset and maintype == "text":
-        try:
-            part.set_param("charset", f.charset)
-        except ValueError:       # a charset taken from stored mail that cannot be a parameter: leave it out
-            pass
+        part.set_param("charset", f.charset)
 
 
 def _typed_related(m: EmailMessage) -> None:
