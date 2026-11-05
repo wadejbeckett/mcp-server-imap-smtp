@@ -30,5 +30,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: talks to real mailboxes (credentials from the file named by MCP_TEST_ENV_FILE)"]
-addopts = "-m 'not integration'"
+markers = [
+    "integration: talks to real mailboxes (credentials from the file named by MCP_TEST_ENV_FILE)",
+    "lab: talks to the container test lab (start it with scripts/lab.sh up)",
+]
+addopts = "-m 'not integration and not lab'"

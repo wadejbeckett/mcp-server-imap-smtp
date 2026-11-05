@@ -1,0 +1,5 @@
+# Lab fixture users (Dovecot passwd-file). These passwords exist only in this test lab.
+# address:{scheme}password
+alice@example.test:{PLAIN}alice-lab-password
+bob@example.test:{PLAIN}bob-lab-password
+carol@example.org:{PLAIN}carol-lab-password
