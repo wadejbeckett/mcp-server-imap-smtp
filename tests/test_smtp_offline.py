@@ -362,3 +362,33 @@ def test_non_ascii_envelope_leaves_body_parameter_to_smtplib(wire):
     smtp.send(mail_server, ADDR, SECRET, msg(to=["josé@b.co"], text="Héllo"))
     server.join(timeout=5)
     assert server.mail_from.upper().count("BODY=8BITMIME") == 1
+
+
+def _original(headers: bytes, body: bytes) -> bytes:
+    return b"From: c@d.co\r\nTo: " + ADDR.encode() + b"\r\nSubject: orig\r\nMessage-ID: <o@d.co>\r\n" + headers + b"\r\n" + body
+
+
+def test_without_8bitmime_an_unlabelled_8bit_forwarded_original_is_made_7bit(wire):
+    client, server, mail_server = wire(extensions="")
+    original = _original(b"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n", "Café\r\n".encode())
+    m = compose.forward(original, ADDR, ["a@b.co"], "see below")
+    smtp.send(mail_server, ADDR, SECRET, m)
+    server.join(timeout=5)
+    assert server.data.isascii() and "BODY=" not in server.mail_from.upper()
+
+
+def test_without_8bitmime_raw_8bit_headers_of_a_forwarded_original_go_out_encoded(wire):
+    client, server, mail_server = wire(extensions="")
+    original = _original("X-Note: raw 8-bit héader\r\n".encode(), b"plain\r\n")
+    smtp.send(mail_server, ADDR, SECRET, compose.forward(original, ADDR, ["a@b.co"], "see below"))
+    server.join(timeout=5)
+    assert server.data.isascii()
+
+
+def test_a_message_that_cannot_be_made_7bit_is_refused_before_sending(monkeypatch, wire):
+    client, server, mail_server = wire(extensions="")
+    monkeypatch.setattr(smtp, "_seven_bit", lambda m: m)      # stands in for content no re-encoding can fix
+    with pytest.raises(MailError, match="8BITMIME"):
+        smtp.send(mail_server, ADDR, SECRET, msg(text="Héllo"))
+    server.join(timeout=5)
+    assert "DATA" not in server.commands

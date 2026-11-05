@@ -168,3 +168,30 @@ def test_8bit_message_global_keeps_utf8_headers():
     raw = global_message("8bit", INNER_GLOBAL)
     data = render.attachment(raw, 0)[2]
     assert "Subject: héllo".encode() in data and b"=?" not in data
+
+
+def test_quoted_printable_message_global_with_a_soft_break_in_its_headers():
+    import quopri
+    inner = ("From: a@x.example\r\nSubject: " + "this subject keeps going and going " * 4 + "héllo\r\n"
+             "To: b@y.example\r\n\r\nbody line\r\n").encode()
+    encoded = quopri.encodestring(inner)
+    assert b"=\n" in encoded.split(b"\n\n")[0] or b"=\r\n" in encoded      # a soft break inside the headers
+    data = render.attachment(global_message("quoted-printable", encoded), 0)[2]
+    assert data.replace(b"\r\n", b"\n").rstrip(b"\n") == inner.replace(b"\r\n", b"\n").rstrip(b"\n")
+
+
+def test_quoted_printable_delivery_status_is_decoded():
+    import quopri
+    status = b"Reporting-MTA: dns; mx.example\r\n\r\nFinal-Recipient: rfc822; z=C3=A9@y.example\r\nAction: failed\r\n"
+    raw = HEAD + (b"Content-Type: multipart/report; report-type=delivery-status; boundary=R\r\n\r\n"
+                  b"--R\r\nContent-Type: text/plain\r\n\r\nIt failed\r\n"
+                  b"--R\r\nContent-Type: message/global-delivery-status\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n"
+                  + status + b"\r\n--R--\r\n")
+    data = render.attachment(raw, 0)[2]
+    assert "Final-Recipient: rfc822; zé@y.example".encode() in data and b"Action: failed" in data
+
+
+def test_long_utf8_header_in_message_global_stays_utf8():
+    inner = ("From: a@x.example\r\nSubject: " + "é" * 60 + " and more words to pass the fold length\r\n\r\nb\r\n").encode()
+    data = render.attachment(global_message("8bit", inner), 0)[2]
+    assert ("é" * 60).encode() in data and b"unknown-8bit" not in data

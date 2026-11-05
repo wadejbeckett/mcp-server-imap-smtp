@@ -878,3 +878,12 @@ def test_retry_after_counts_down_the_sliding_window(monkeypatch):
     assert lim.retry_after("k") == 50 and lim.retry_after("other") == 0
     clock[0] += 51
     assert lim.retry_after("k") == 0 and not lim.blocked("k")
+
+
+def test_retry_after_with_a_zero_limit(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    lim = RateLimiter(0, 900)
+    assert lim.retry_after("k") == 0
+    lim.hit("k")
+    assert lim.retry_after("k") == 900

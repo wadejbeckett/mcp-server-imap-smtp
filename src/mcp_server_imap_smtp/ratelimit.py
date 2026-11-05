@@ -101,7 +101,7 @@ class RateLimiter:
             q = self._trim(key)
             if q is None or len(q) < self.max:
                 return 0
-            oldest_to_expire = q[len(q) - self.max]
+            oldest_to_expire = q[len(q) - self.max] if self.max > 0 else q[-1]   # max 0: blocked while any hit
             return max(1, math.ceil(oldest_to_expire + self.window - time.monotonic()))
 
     def hit(self, key: str) -> None:

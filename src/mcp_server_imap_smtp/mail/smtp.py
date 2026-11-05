@@ -83,19 +83,24 @@ def refusal(code: int, text: bytes | str) -> str:
 
 
 def _seven_bit(msg: EmailMessage) -> EmailMessage:
-    """A copy of msg whose 8-bit leaf parts are re-encoded as quoted-printable (text) or base64 (anything
-    else), for a server that does not offer 8BITMIME. Headers are already 7-bit (compose encodes them)."""
+    """A copy of msg for a server that does not offer 8BITMIME: every leaf part whose content is not 7-bit
+    ASCII, whatever its Content-Transfer-Encoding label says, is re-encoded as quoted-printable (text) or
+    base64 (anything else), and a message/* wrapper labelled 8bit or binary is relabelled 7bit."""
     out = copy.deepcopy(msg)
     for part in out.walk():
         if part.is_multipart():
             continue
-        cte = str(part.get("Content-Transfer-Encoding", "")).strip().lower()
-        if cte not in ("8bit", "binary"):
+        payload = part.get_payload()
+        if isinstance(payload, (str, bytes)) and payload.isascii():
             continue
         data = part.get_payload(decode=True) or b""
         del part["Content-Transfer-Encoding"]
         part.set_payload(data)
         (encoders.encode_quopri if part.get_content_maintype() == "text" else encoders.encode_base64)(part)
+    for part in out.walk():
+        if (part.get_content_maintype() == "message"
+                and str(part.get("Content-Transfer-Encoding", "")).strip().lower() in ("8bit", "binary")):
+            part.replace_header("Content-Transfer-Encoding", "7bit")
     return out
 
 
@@ -103,12 +108,17 @@ def _for_server(s: smtplib.SMTP, msg: EmailMessage, envelope: list[str]) -> tupl
     """The message as it goes on the wire and the MAIL FROM body parameters (RFC 5321 section 2.4: 8-bit
     content needs BODY=8BITMIME, RFC 6152). A non-ASCII envelope address makes smtplib add SMTPUTF8 and
     BODY=8BITMIME itself, so it is not added twice. When the server does not offer 8BITMIME the 8-bit parts
-    are re-encoded to 7 bits."""
+    are re-encoded to 7 bits; what still is not 7-bit (raw 8-bit header fields in a forwarded original) is
+    refused before anything is sent."""
     if not "".join(envelope).isascii() or msg.as_bytes().isascii():
         return msg, []
     if s.has_extn("8bitmime"):
         return msg, ["BODY=8BITMIME"]
-    return _seven_bit(msg), []
+    wire = _seven_bit(msg)
+    if not wire.as_bytes().isascii():
+        raise MailError("the mail server does not accept 8-bit mail (no 8BITMIME) and this message cannot be "
+                        "made 7-bit; send it without the forwarded original")
+    return wire, []
 
 
 def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc=(),

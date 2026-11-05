@@ -7,7 +7,7 @@ import binascii
 import html as html_lib
 import quopri
 import re
-from email import policy
+from email import errors, policy
 from email.message import EmailMessage
 from email.parser import BytesParser
 
@@ -186,7 +186,22 @@ def _part_body(part: EmailMessage) -> bytes:
     return b""
 
 
-_UTF8 = policy.default.clone(utf8=True)
+_UTF8 = policy.default.clone(utf8=True, refold_source="none")    # long UTF-8 header fields stay as sent
+
+
+def _source(m) -> bytes:
+    """The lines a parsed message (or header block) was made from, without re-serialising: its header fields
+    as received, the blank line only if there was one, then its body. Used to undo a transfer encoding the
+    parser read as if it were a message: a soft line break inside the header block ends that block early,
+    and the generator would add a blank line there that is not in the encoded text."""
+    head = "".join(f"{name}: {value}\n" for name, value in m.raw_items())
+    missing = any(isinstance(d, errors.MissingHeaderBodySeparatorDefect) for d in m.defects)
+    payload = m.get_payload()
+    if isinstance(payload, list):
+        body = b"".join(_source(sub) for sub in payload)
+    else:
+        body = (payload or "").encode("utf-8", "surrogateescape")
+    return (head + ("" if missing else "\n")).encode("utf-8", "surrogateescape") + body
 
 
 def _get_attachment_data(part: EmailMessage) -> bytes:
@@ -198,7 +213,9 @@ def _get_attachment_data(part: EmailMessage) -> bytes:
     if part.get_content_maintype() == "message":
         cte = str(part.get("Content-Transfer-Encoding", "")).strip().lower()
         if cte in ("base64", "quoted-printable"):
-            body = _part_body(part)
+            payload = part.get_payload()
+            body = (b"".join(_source(sub) for sub in payload) if isinstance(payload, list)
+                    else _part_body(part))
             try:
                 return base64.b64decode(body) if cte == "base64" else quopri.decodestring(body)
             except (ValueError, binascii.Error):
