@@ -132,3 +132,39 @@ def test_html_beside_a_plain_body_in_mixed_is_still_listed():
                   b"--M\r\nContent-Type: text/plain\r\n\r\nSee the page\r\n"
                   b"--M\r\nContent-Type: text/html\r\n\r\n<p>page</p>\r\n--M--\r\n")
     assert names(raw) == [("attachment-0", "text/html")]
+
+
+def test_d4_soft_line_before_the_signature_separator_is_not_joined_to_it():
+    raw = HEAD + (b"Content-Type: text/plain; format=flowed\r\n\r\n"
+                  b"Thanks for the \r\nreport. \r\n-- \r\nWade\r\n"
+                  b"> quoted end \r\n> -- \r\n> sig\r\n")
+    assert render.summarise(raw)["text"] == "Thanks for the report. \n-- \nWade\n> quoted end \n> -- \n> sig"
+
+
+INNER_GLOBAL = "From: a@x.example\r\nSubject: héllo\r\n\r\nbody\r\n".encode()
+
+
+def global_message(cte: str, payload: bytes) -> bytes:
+    return HEAD + (b"Content-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nhi\r\n"
+                   b"--B\r\nContent-Type: message/global\r\nContent-Transfer-Encoding: " + cte.encode() +
+                   b"\r\n\r\n" + payload + b"\r\n--B--\r\n")
+
+
+def test_base64_message_global_is_decoded():
+    import base64
+    raw = global_message("base64", base64.b64encode(INNER_GLOBAL))
+    data = render.attachment(raw, 0)[2]
+    assert data.replace(b"\r\n", b"\n") == INNER_GLOBAL.replace(b"\r\n", b"\n")
+    assert render.summarise(raw)["attachments"][0]["size"] == len(data)
+
+
+def test_quoted_printable_message_global_is_decoded():
+    import quopri
+    raw = global_message("quoted-printable", quopri.encodestring(INNER_GLOBAL))
+    assert "Subject: héllo".encode() in render.attachment(raw, 0)[2]
+
+
+def test_8bit_message_global_keeps_utf8_headers():
+    raw = global_message("8bit", INNER_GLOBAL)
+    data = render.attachment(raw, 0)[2]
+    assert "Subject: héllo".encode() in data and b"=?" not in data

@@ -265,11 +265,15 @@ async def test_refused_registration_is_logged_with_client_name(prov, caplog):
 
 
 @pytest.mark.anyio
-async def test_refresh_reuse_within_the_retry_grace_is_refused_but_keeps_the_grant(prov):
+async def test_refresh_reuse_within_the_retry_grace_is_refused_but_keeps_the_grant(prov, caplog):
+    import logging
+    caplog.set_level(logging.WARNING, logger="mcp_server_imap_smtp.auth.provider")
     c, tok = await tokens(prov)
     new = await prov.exchange_refresh_token(c, await prov.load_refresh_token(c, tok.refresh_token), [])
     assert await prov.load_refresh_token(c, tok.refresh_token) is None          # refused
     assert await prov.load_refresh_token(c, new.refresh_token) is not None      # the grant lives on
+    (line,) = [r.getMessage() for r in caplog.records if "presented again" in r.getMessage()]
+    assert "within 30s" in line and "not revoked" in line and tok.refresh_token not in line
 
 
 @pytest.mark.anyio
@@ -285,3 +289,12 @@ async def test_refresh_reuse_after_the_grace_revokes_the_grant(prov, monkeypatch
     assert await prov.load_refresh_token(c, tok.refresh_token) is None
     assert await prov.load_refresh_token(c, new.refresh_token) is None          # every token of the grant ended
     assert await prov.load_access_token(new.access_token) is None
+
+
+@pytest.mark.anyio
+async def test_a_wrong_refresh_token_is_not_logged_as_reuse(prov, caplog):
+    import logging
+    caplog.set_level(logging.WARNING, logger="mcp_server_imap_smtp.auth.provider")
+    c, _ = await tokens(prov)
+    assert await prov.load_refresh_token(c, "rt_nothing_like_a_token") is None
+    assert not [r for r in caplog.records if "presented again" in r.getMessage()]

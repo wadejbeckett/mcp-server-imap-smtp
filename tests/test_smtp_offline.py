@@ -334,11 +334,27 @@ def test_ascii_body_sends_no_body_parameter(wire):
     assert "BODY=" not in server.mail_from.upper()
 
 
-def test_no_8bitmime_parameter_when_the_server_does_not_offer_it(wire):
+def test_without_8bitmime_an_8bit_body_is_sent_as_7bit(wire):
     client, server, mail_server = wire(extensions="")
-    smtp.send(mail_server, ADDR, SECRET, msg(text="Héllo wörld"))
+    m = msg(text="Héllo wörld")
+    smtp.send(mail_server, ADDR, SECRET, m)
     server.join(timeout=5)
     assert "BODY=" not in server.mail_from.upper()
+    assert server.data.isascii() and b"Content-Transfer-Encoding: quoted-printable" in server.data
+    from email import policy
+    from email.parser import BytesParser
+    sent = BytesParser(policy=policy.default).parsebytes(server.data.rsplit(b"\r\n.", 1)[0])
+    assert sent.get_body(("plain",)).get_content().strip() == "Héllo wörld"
+    assert m.get_body(("plain",))["Content-Transfer-Encoding"] == "8bit"      # the caller's copy is untouched
+
+
+def test_without_8bitmime_8bit_html_and_attachments_are_7bit(wire):
+    client, server, mail_server = wire(extensions="")
+    m = msg(text="Grüße", html="<p>Grüße</p>")
+    m.add_attachment("naïve".encode(), maintype="application", subtype="octet-stream", filename="a.bin")
+    smtp.send(mail_server, ADDR, SECRET, m)
+    server.join(timeout=5)
+    assert server.data.isascii()
 
 
 def test_non_ascii_envelope_leaves_body_parameter_to_smtplib(wire):

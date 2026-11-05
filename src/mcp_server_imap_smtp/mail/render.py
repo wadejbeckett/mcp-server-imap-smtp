@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import html as html_lib
+import quopri
 import re
 from email import policy
 from email.message import EmailMessage
@@ -174,22 +176,40 @@ def _get_body_text(body: EmailMessage | None, links: list[str] | None = None) ->
             return _fallback_decode(body)
 
 
+def _part_body(part: EmailMessage) -> bytes:
+    """The body of a part as it is serialised, without its own header block."""
+    whole = part.as_bytes()
+    for sep in (b"\r\n\r\n", b"\n\n"):
+        head, found, body = whole.partition(sep)
+        if found:
+            return body
+    return b""
+
+
+_UTF8 = policy.default.clone(utf8=True)
+
+
 def _get_attachment_data(part: EmailMessage) -> bytes:
     """The bytes of one attachment. message/rfc822 (and message/global) is the serialised inner message;
     any other message/* part (delivery-status, disposition-notification, global-delivery-status,
     global-headers) is the body of the part as it was sent, not the empty result of decoding a parsed
-    header block (D3 of the 2026-11-04 content research)."""
-    ctype = part.get_content_type()
-    if ctype in ("message/rfc822", "message/global") and isinstance(part.get_payload(), list):
-        inner_msg = part.get_payload(0)
-        return inner_msg.as_bytes() if inner_msg is not None else b""
+    header block (D3 of the 2026-11-04 content research). A message/* part sent base64 or
+    quoted-printable (RFC 6532 s3.5 allows it for the global types) is decoded first."""
     if part.get_content_maintype() == "message":
-        whole = part.as_bytes()
-        for sep in (b"\r\n\r\n", b"\n\n"):
-            head, found, body = whole.partition(sep)
-            if found:
+        cte = str(part.get("Content-Transfer-Encoding", "")).strip().lower()
+        if cte in ("base64", "quoted-printable"):
+            body = _part_body(part)
+            try:
+                return base64.b64decode(body) if cte == "base64" else quopri.decodestring(body)
+            except (ValueError, binascii.Error):
                 return body
-        return b""
+        if part.get_content_type() in ("message/rfc822", "message/global") and isinstance(part.get_payload(), list):
+            inner_msg = part.get_payload(0)
+            if inner_msg is None:
+                return b""
+            # message/global carries UTF-8 header fields (RFC 6532): keep them as UTF-8, not encoded words
+            return inner_msg.as_bytes(policy=_UTF8 if part.get_content_subtype() == "global" else inner_msg.policy)
+        return _part_body(part)
     return part.get_payload(decode=True) or b""
 
 
@@ -291,8 +311,8 @@ _FLOWED_QUOTE = re.compile(r"^>+")
 
 def _unflow(text: str, delsp: bool) -> str:
     """Join the soft line breaks of a format=flowed body (RFC 3676 section 4.1): a line ending in a space
-    continues on the next line of the same quote depth. The "-- " signature separator is never joined, and
-    space-stuffing is removed."""
+    continues on the next line of the same quote depth. The "-- " signature separator is never joined to the
+    line before or after it, and space-stuffing is removed."""
     out: list[str] = []
     pending: str | None = None
     pending_depth = -1
@@ -302,8 +322,9 @@ def _unflow(text: str, delsp: bool) -> str:
         content = line[depth:]
         if content.startswith(" "):
             content = content[1:]
-        soft = content.endswith(" ") and content != "-- "
-        if pending is not None and depth != pending_depth:
+        separator = content == "-- "      # RFC 3676 s4.3: the signature separator starts a new line
+        soft = content.endswith(" ") and not separator
+        if pending is not None and (depth != pending_depth or separator):
             out.append(pending)
             pending = None
         if pending is None:

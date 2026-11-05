@@ -6,6 +6,7 @@ attempt turns out not to be the person's fault, so parallel requests cannot outr
 from __future__ import annotations
 
 import ipaddress
+import math
 import threading
 import time
 from collections import deque
@@ -92,6 +93,16 @@ class RateLimiter:
         """Number of keys currently tracked."""
         with self._lock:
             return len(self._hits)
+
+    def retry_after(self, key: str) -> int:
+        """Whole seconds until the key is no longer blocked (0 when it is not blocked): until enough of the
+        attempts in its sliding window have aged out."""
+        with self._lock:
+            q = self._trim(key)
+            if q is None or len(q) < self.max:
+                return 0
+            oldest_to_expire = q[len(q) - self.max]
+            return max(1, math.ceil(oldest_to_expire + self.window - time.monotonic()))
 
     def hit(self, key: str) -> None:
         with self._lock:

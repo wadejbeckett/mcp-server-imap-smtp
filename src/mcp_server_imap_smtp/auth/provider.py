@@ -271,6 +271,10 @@ class GatewayProvider:
             revoked = self.store.replayed_grant(refresh_token, "refresh", grace=REFRESH_RETRY_GRACE)
             if revoked:
                 log.warning("rotated-out refresh token presented again: grant %s revoked", revoked)
+            elif (spent := self.store.spent_grant(refresh_token, "refresh")):
+                # Logged too: a thief who refreshed first and a client retrying look the same here.
+                log.warning("rotated-out refresh token presented again within %ss of rotation: grant %s; refused, "
+                            "not revoked", REFRESH_RETRY_GRACE, spent)
             return None
         if rec.client_id != client.client_id:
             return None

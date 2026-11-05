@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import copy
 import re
 import smtplib
+from email import encoders
 from email.message import EmailMessage
 from email.utils import parseaddr
 
@@ -80,15 +82,33 @@ def refusal(code: int, text: bytes | str) -> str:
     return f"SMTP refused: {code}" + (f" {m.group(1)}" if m else "") + f" ({kind})"
 
 
-def _body_options(s: smtplib.SMTP, msg: EmailMessage, envelope: list[str]) -> list[str]:
-    """MAIL FROM parameters for the body: 8-bit content is declared with BODY=8BITMIME when the server offers
-    it (RFC 6152; RFC 5321 section 2.4: without it the content must be 7-bit ASCII). A non-ASCII envelope
-    address makes smtplib add SMTPUTF8 and BODY=8BITMIME itself, so it is not added twice."""
-    if not "".join(envelope).isascii():
-        return []
-    if s.has_extn("8bitmime") and not msg.as_bytes().isascii():
-        return ["BODY=8BITMIME"]
-    return []
+def _seven_bit(msg: EmailMessage) -> EmailMessage:
+    """A copy of msg whose 8-bit leaf parts are re-encoded as quoted-printable (text) or base64 (anything
+    else), for a server that does not offer 8BITMIME. Headers are already 7-bit (compose encodes them)."""
+    out = copy.deepcopy(msg)
+    for part in out.walk():
+        if part.is_multipart():
+            continue
+        cte = str(part.get("Content-Transfer-Encoding", "")).strip().lower()
+        if cte not in ("8bit", "binary"):
+            continue
+        data = part.get_payload(decode=True) or b""
+        del part["Content-Transfer-Encoding"]
+        part.set_payload(data)
+        (encoders.encode_quopri if part.get_content_maintype() == "text" else encoders.encode_base64)(part)
+    return out
+
+
+def _for_server(s: smtplib.SMTP, msg: EmailMessage, envelope: list[str]) -> tuple[EmailMessage, list[str]]:
+    """The message as it goes on the wire and the MAIL FROM body parameters (RFC 5321 section 2.4: 8-bit
+    content needs BODY=8BITMIME, RFC 6152). A non-ASCII envelope address makes smtplib add SMTPUTF8 and
+    BODY=8BITMIME itself, so it is not added twice. When the server does not offer 8BITMIME the 8-bit parts
+    are re-encoded to 7 bits."""
+    if not "".join(envelope).isascii() or msg.as_bytes().isascii():
+        return msg, []
+    if s.has_extn("8bitmime"):
+        return msg, ["BODY=8BITMIME"]
+    return _seven_bit(msg), []
 
 
 def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc=(),
@@ -121,7 +141,8 @@ def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc
             raise MailError(f"SMTP greeting {code}")
         s.ehlo()
         _login(s, address, password)
-        refused = s.send_message(msg, from_addr=address, to_addrs=rcpts, mail_options=_body_options(s, msg, [address, *rcpts]))
+        wire, options = _for_server(s, msg, [address, *rcpts])
+        refused = s.send_message(wire, from_addr=address, to_addrs=rcpts, mail_options=options)
         return [r for r in rcpts if r not in refused]
     except smtplib.SMTPRecipientsRefused as exc:
         raise MailError("mail server refused every recipient") from exc

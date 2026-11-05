@@ -31,12 +31,17 @@ DAY = 86400
 
 
 def wait_text(seconds: int) -> str:
-    """A limiter window as people read it: "15 minutes", "1 hour", "90 seconds"."""
-    for unit, size in (("hour", 3600), ("minute", 60)):
-        if seconds >= size and seconds % size == 0:
-            n = seconds // size
-            return f"{n} {unit}" + ("s" if n != 1 else "")
-    return f"{seconds} second" + ("s" if seconds != 1 else "")
+    """A wait as people read it, never shorter than the real one: "15 minutes", "1 hour", "45 seconds";
+    a wait that is not a whole number of hours is rounded up to minutes below two hours, to hours above."""
+    def unit(n: int, name: str) -> str:
+        return f"{n} {name}" + ("s" if n != 1 else "")
+    if seconds < 60:
+        return unit(max(seconds, 1), "second")
+    if seconds % 3600 == 0:
+        return unit(seconds // 3600, "hour")
+    if seconds < 7200:
+        return unit(-(-seconds // 60), "minute")
+    return unit(-(-seconds // 3600), "hour")
 
 
 @dataclass
@@ -357,11 +362,23 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
         headers = {**security_headers(redirect_uri), "Retry-After": str(retry or settings.login_window)}
         return Response(text, 429, headers=headers)
 
-    def locked_out(redirect_uri: str, entry: Entry, address: str) -> Response:
+    def lock_wait(address: str, network: str) -> int:
+        """How long the mailbox stays locked: the longest of its window, daily and all-networks locks."""
+        key = f"addr:{address}"
+        return max(limiter.retry_after(key), limits.daily.retry_after(f"{key}|{network}"),
+                   limits.daily_total.retry_after(key)) or settings.login_window
+
+    def locked_out(redirect_uri: str, entry: Entry, address: str, network: str) -> Response:
+        retry = lock_wait(address, network)
         if entry.line is None:
-            return too_many(redirect_uri)
+            return too_many(redirect_uri, f"Too many attempts. Try again in {wait_text(retry)}.", retry=retry)
         return too_many(redirect_uri, f"Too many failed sign-ins for {address} (line {entry.line}). "
-                                      f"Try again in {wait}, or leave it out.")
+                                      f"Try again in {wait_text(retry)}, or leave it out.", retry=retry)
+
+    def page_locked(key: str, text: str) -> Response:
+        """A 429 for a key of the per-page limiter (window pending_ttl), naming the time left."""
+        retry = limits.request.retry_after(key) or settings.pending_ttl
+        return too_many(None, text.format(wait=wait_text(retry)), retry=retry)
 
     async def verify(request: Request, entries: list[Entry], normalised: list[str], page_key: str, ip_key: str,
                      again: Callable, redirect_uri: str | None) -> tuple[list[Entry], list[str], list[MailServer]] | Response:
@@ -388,7 +405,7 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
             key = f"addr:{address}"
             if limiter.blocked(key) or limits.daily.blocked(f"{key}|{network}") or limits.daily_total.blocked(key):
                 limiter.refund(ip_key)      # refused for the mailbox's lock, not for this client's guesses
-                return locked_out(redirect_uri, entry, address)
+                return locked_out(redirect_uri, entry, address, network)
         deadline = anyio.current_time() + VERIFY_BUDGET_BASE + VERIFY_BUDGET_PER_MAILBOX * len(entries)
 
         def out_of_time() -> bool:
@@ -508,7 +525,7 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
         if state["locked"] is not None:
             limiter.refund(ip_key)      # refused for the mailbox's lock, not for this client's guesses
             i = state["locked"]
-            return locked_out(redirect_uri, entries[i], normalised[i])
+            return locked_out(redirect_uri, entries[i], normalised[i], network)
         if not complete:                # an outage or the time budget: not the person's fault
             limiter.refund(ip_key)
             outage = any(v is _UNAVAILABLE or v is _BUSY for v in verdicts.values())
@@ -647,7 +664,7 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
             email = str(form.get("email", "")).strip().lower()
             entry = Entry(None, email, str(form.get("password", "")))
             if limits.request.blocked(f"req:manage:{ip(request)}"):
-                return too_many(None)
+                return page_locked(f"req:manage:{ip(request)}", "Too many attempts. Try again in {wait}.")
             if not limiter.try_acquire([ip_key]):
                 return too_many(None)
             try:
@@ -724,8 +741,7 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
             return await again(problem)
         page_key = f"manage-subject:{subject}"      # by subject, so signing in again does not reset it
         if limits.request.blocked(f"req:{page_key}"):
-            return too_many(None, f"Too many wrong passwords. Sign in again in {wait_text(settings.pending_ttl)}.",
-                            retry=settings.pending_ttl)
+            return page_locked(f"req:{page_key}", "Too many wrong passwords. Sign in again in {wait}.")
         if not limiter.try_acquire([ip_key]):
             return too_many(None)
         checked = await verify(request, entries, normalised, page_key, ip_key, again, None)

@@ -834,7 +834,8 @@ def test_an_untrusted_mail_server_certificate_is_logged(caplog, monkeypatch):
 
 
 @pytest.mark.parametrize("seconds, text", [(900, "15 minutes"), (60, "1 minute"), (3600, "1 hour"),
-                                           (7200, "2 hours"), (90, "90 seconds"), (1, "1 second")])
+                                           (7200, "2 hours"), (90, "2 minutes"), (45, "45 seconds"), (1, "1 second"),
+                                           (86399, "24 hours"), (5400, "90 minutes"), (0, "1 second")])
 def test_wait_text(seconds, text):
     from mcp_server_imap_smtp.auth.login import wait_text
     assert wait_text(seconds) == text
@@ -846,3 +847,34 @@ def test_lockout_text_follows_login_window(tmp_path):
         c.post("/mail/login", data={"req": req, "email": "me@x.co.za", "password": "bad"})
     r = c.post("/mail/login", data={"req": req, "email": "me@x.co.za", "password": "pw"})
     assert r.status_code == 429 and "Try again in 1 hour." in r.text and "15 minutes" not in r.text
+
+
+def test_daily_lockout_names_the_daily_wait(tmp_path):
+    """login_daily_failures is a 24-hour sliding window: the text and Retry-After say so, not 15 minutes."""
+    c, req, _, _ = make_env(tmp_path, limit=100, login_daily_failures=3, request_login_failures=100)
+    for _ in range(3):
+        c.post("/mail/login", data={"req": req, "email": "me@x.co.za", "password": "bad"})
+    r = c.post("/mail/login", data={"req": req, "email": "me@x.co.za", "password": "pw"})
+    assert r.status_code == 429
+    assert "Try again in 24 hours." in r.text and 86000 < int(r.headers["retry-after"]) <= 86400
+
+
+def test_manage_page_network_block_names_the_page_window(tmp_path):
+    c, _, _, _ = make_env(tmp_path, limit=1000, request_login_failures=2)
+    for i in range(2):
+        c.post("/mail/manage", data={"action": "signin", "email": f"u{i}@x.co.za", "password": "bad"})
+    r = c.post("/mail/manage", data={"action": "signin", "email": "z@x.co.za", "password": "bad"})
+    assert r.status_code == 429
+    assert "Try again in 5 minutes." in r.text and 0 < int(r.headers["retry-after"]) <= 300
+
+
+def test_retry_after_counts_down_the_sliding_window(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    lim = RateLimiter(2, 900)
+    lim.hit("k"); clock[0] += 100; lim.hit("k")
+    assert lim.retry_after("k") == 800        # the first hit ages out 900 s after it was made
+    clock[0] += 750                           # the first hit is 850 s old: 50 s to go
+    assert lim.retry_after("k") == 50 and lim.retry_after("other") == 0
+    clock[0] += 51
+    assert lim.retry_after("k") == 0 and not lim.blocked("k")
