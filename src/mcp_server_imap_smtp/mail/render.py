@@ -182,7 +182,7 @@ def _get_attachment_data(part: EmailMessage) -> bytes:
     ctype = part.get_content_type()
     if ctype in ("message/rfc822", "message/global") and isinstance(part.get_payload(), list):
         inner_msg = part.get_payload(0)
-        return inner_msg.as_bytes() if inner_msg else b""
+        return inner_msg.as_bytes() if inner_msg is not None else b""
     if part.get_content_maintype() == "message":
         whole = part.as_bytes()
         for sep in (b"\r\n\r\n", b"\n\n"):
@@ -221,8 +221,9 @@ def _attachments(msg: EmailMessage) -> list[EmailMessage]:
     signed or list-relayed message is listed (D10), a text/calendar beside the body in an alternative is
     listed (D2), and a single-part message that is not text (an S/MIME application/pkcs7-mime) lists
     itself (D1). A message/* part is one leaf and is not descended."""
-    plain, html = _bodies(msg)
-    body = plain if plain is not None else html
+    plain, html, plain_text = _choose(msg)
+    body = plain if plain_text else html if html is not None else plain
+    hidden = {id(body)} | ({id(plain)} if plain is not None and not plain_text else set())  # a blank plain part
     leaves: list[tuple[EmailMessage, tuple[EmailMessage, ...]]] = []
 
     def visit(part: EmailMessage, path: tuple[EmailMessage, ...]) -> None:
@@ -242,11 +243,47 @@ def _attachments(msg: EmailMessage) -> list[EmailMessage]:
         for i, ancestor in enumerate(path):
             if id(ancestor) in alternatives:
                 below = path[i + 1:]       # nothing but a related wrapper whose root this part is
-                return all(r.get_content_subtype() == "related" and next(r.iter_parts(), None) is
+                return all(r.get_content_subtype() == "related" and _related_root(r) is
                            (below[j + 1] if j + 1 < len(below) else part) for j, r in enumerate(below))
         return False
 
-    return [part for part, path in leaves if part is not body and not is_text_version(part, path)]
+    return [part for part, path in leaves if id(part) not in hidden and not is_text_version(part, path)]
+
+
+def _related_root(related: EmailMessage) -> EmailMessage | None:
+    """The root of a multipart/related as get_body finds it: the part named by `start`, else the first."""
+    parts = list(related.iter_parts())
+    start = related.get_param("start")
+    if start and isinstance(start, str):
+        for part in parts:
+            if str(part.get("Content-ID", "")).strip() == start.strip():
+                return part
+    return parts[0] if parts else None
+
+
+def _plain_text(plain: EmailMessage | None) -> str:
+    """The plain body as returned to the AI (format=flowed unwrapped, stripped); "" when there is none."""
+    if plain is None:
+        return ""
+    text = _get_body_text(plain)
+    if _param(plain, "format") == "flowed":
+        text = _unflow(text, _param(plain, "delsp") == "yes")
+    return text.strip()
+
+
+def _choose(msg: EmailMessage) -> tuple[EmailMessage | None, EmailMessage | None, str]:
+    """The plain and HTML body candidates and the plain text; the plain part is the body only when it has text,
+    so summarise() and _attachments() agree on which part is shown."""
+    plain, html = _bodies(msg)
+    return plain, html, _plain_text(plain)
+
+
+def _param(part: EmailMessage, name: str) -> str:
+    """A Content-Type parameter, lower case; "" when absent or unreadable (an RFC 2231 tuple is collapsed)."""
+    value = part.get_param(name, "")
+    if isinstance(value, tuple):
+        value = value[2] if len(value) == 3 else ""
+    return str(value or "").strip().lower()
 
 
 _FLOWED_QUOTE = re.compile(r"^>+")
@@ -288,14 +325,7 @@ def summarise(raw: bytes, body_cap: int = 50_000) -> dict:
     # Try plain text first, then HTML
     text = ""
     links: list[str] = []
-    plain_body, html_body = _bodies(msg)
-    if plain_body is not None:
-        plain_text = _get_body_text(plain_body)
-        if plain_body.get_param("format", "").lower() == "flowed":
-            plain_text = _unflow(plain_text, plain_body.get_param("delsp", "").lower() == "yes")
-        plain_text = plain_text.strip()
-        if plain_text:
-            text = plain_text
+    _, html_body, text = _choose(msg)
 
     # If plain text is empty/blank, try HTML
     if not text:

@@ -80,9 +80,12 @@ def refusal(code: int, text: bytes | str) -> str:
     return f"SMTP refused: {code}" + (f" {m.group(1)}" if m else "") + f" ({kind})"
 
 
-def _body_options(s: smtplib.SMTP, msg: EmailMessage) -> list[str]:
+def _body_options(s: smtplib.SMTP, msg: EmailMessage, envelope: list[str]) -> list[str]:
     """MAIL FROM parameters for the body: 8-bit content is declared with BODY=8BITMIME when the server offers
-    it (RFC 6152; RFC 5321 section 2.4: without it the content must be 7-bit ASCII)."""
+    it (RFC 6152; RFC 5321 section 2.4: without it the content must be 7-bit ASCII). A non-ASCII envelope
+    address makes smtplib add SMTPUTF8 and BODY=8BITMIME itself, so it is not added twice."""
+    if not "".join(envelope).isascii():
+        return []
     if s.has_extn("8bitmime") and not msg.as_bytes().isascii():
         return ["BODY=8BITMIME"]
     return []
@@ -118,7 +121,7 @@ def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc
             raise MailError(f"SMTP greeting {code}")
         s.ehlo()
         _login(s, address, password)
-        refused = s.send_message(msg, from_addr=address, to_addrs=rcpts, mail_options=_body_options(s, msg))
+        refused = s.send_message(msg, from_addr=address, to_addrs=rcpts, mail_options=_body_options(s, msg, [address, *rcpts]))
         return [r for r in rcpts if r not in refused]
     except smtplib.SMTPRecipientsRefused as exc:
         raise MailError("mail server refused every recipient") from exc

@@ -105,3 +105,30 @@ def test_d4_flowed_delsp_removes_the_soft_space():
 def test_fixed_text_is_not_unwrapped():
     raw = HEAD + b"Content-Type: text/plain\r\n\r\nline one \r\nline two\r\n"
     assert render.summarise(raw)["text"] == "line one \r\nline two"
+
+
+def test_related_root_named_by_start_is_not_an_attachment():
+    raw = HEAD + (b"Content-Type: multipart/alternative; boundary=A\r\n\r\n"
+                  b"--A\r\nContent-Type: text/plain\r\n\r\nHi\r\n"
+                  b'--A\r\nContent-Type: multipart/related; boundary=R; start="<h@x>"\r\n\r\n'
+                  b"--R\r\nContent-Type: image/png\r\nContent-ID: <i1>\r\n\r\nPNG\r\n"
+                  b"--R\r\nContent-Type: text/html\r\nContent-ID: <h@x>\r\n\r\n<p>Hi</p>\r\n--R--\r\n--A--\r\n")
+    assert names(raw) == [("attachment-0", "image/png")]
+
+
+def test_html_shown_because_the_plain_part_is_blank_is_not_also_an_attachment():
+    raw = HEAD + (b"Content-Type: multipart/mixed; boundary=M\r\n\r\n"
+                  b"--M\r\nContent-Type: text/plain\r\n\r\n   \r\n"
+                  b"--M\r\nContent-Type: text/html\r\n\r\n<p>Real body</p>\r\n"
+                  b"--M\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\n\r\nPDF\r\n--M--\r\n")
+    s = render.summarise(raw)
+    assert "Real body" in s["text"]
+    assert names(raw) == [("a.pdf", "application/pdf")]
+    assert render.attachment(raw, 0)[0] == "a.pdf"
+
+
+def test_html_beside_a_plain_body_in_mixed_is_still_listed():
+    raw = HEAD + (b"Content-Type: multipart/mixed; boundary=M\r\n\r\n"
+                  b"--M\r\nContent-Type: text/plain\r\n\r\nSee the page\r\n"
+                  b"--M\r\nContent-Type: text/html\r\n\r\n<p>page</p>\r\n--M--\r\n")
+    assert names(raw) == [("attachment-0", "text/html")]

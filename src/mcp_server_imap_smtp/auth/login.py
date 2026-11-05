@@ -352,8 +352,9 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
 
     wait = wait_text(settings.login_window)     # the texts follow login_window, as Retry-After does
 
-    def too_many(redirect_uri: str, text: str = f"Too many attempts. Try again in {wait}.") -> Response:
-        headers = {**security_headers(redirect_uri), "Retry-After": str(settings.login_window)}
+    def too_many(redirect_uri: str, text: str = f"Too many attempts. Try again in {wait}.",
+                 retry: int | None = None) -> Response:
+        headers = {**security_headers(redirect_uri), "Retry-After": str(retry or settings.login_window)}
         return Response(text, 429, headers=headers)
 
     def locked_out(redirect_uri: str, entry: Entry, address: str) -> Response:
@@ -723,7 +724,8 @@ def login_routes(provider: GatewayProvider, resolver: Resolver, verifier: Verifi
             return await again(problem)
         page_key = f"manage-subject:{subject}"      # by subject, so signing in again does not reset it
         if limits.request.blocked(f"req:{page_key}"):
-            return too_many(None, f"Too many wrong passwords. Sign in again in {wait_text(settings.pending_ttl)}.")
+            return too_many(None, f"Too many wrong passwords. Sign in again in {wait_text(settings.pending_ttl)}.",
+                            retry=settings.pending_ttl)
         if not limiter.try_acquire([ip_key]):
             return too_many(None)
         checked = await verify(request, entries, normalised, page_key, ip_key, again, None)

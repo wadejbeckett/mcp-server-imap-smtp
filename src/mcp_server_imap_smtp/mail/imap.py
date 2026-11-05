@@ -598,6 +598,6 @@ class ImapClient:
             return None
         try:
             found = self.find_by_message_id(folder, str(message_id), references=False)
-        except (MailError, imaplib.IMAP4.error):
+        except (MailError, imaplib.IMAP4.error, OSError):     # best effort: the message is already stored
             return None
         return max(found) if found else None

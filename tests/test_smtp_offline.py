@@ -339,3 +339,10 @@ def test_no_8bitmime_parameter_when_the_server_does_not_offer_it(wire):
     smtp.send(mail_server, ADDR, SECRET, msg(text="Héllo wörld"))
     server.join(timeout=5)
     assert "BODY=" not in server.mail_from.upper()
+
+
+def test_non_ascii_envelope_leaves_body_parameter_to_smtplib(wire):
+    client, server, mail_server = wire(extensions="8BITMIME SMTPUTF8")
+    smtp.send(mail_server, ADDR, SECRET, msg(to=["josé@b.co"], text="Héllo"))
+    server.join(timeout=5)
+    assert server.mail_from.upper().count("BODY=8BITMIME") == 1

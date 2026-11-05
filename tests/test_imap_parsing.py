@@ -785,3 +785,10 @@ def test_append_uid_search_failure_is_not_an_error():
     c, _ = client(**{"uid SEARCH": ("NO", [b"busy"])}, list=("OK", [rb'(\HasNoChildren) "." INBOX']),
                   append=("OK", [None]))
     assert c.append("INBOX", b"raw", (), message_id="<m@x>") is None
+
+
+def test_append_uid_search_socket_error_is_not_an_error():
+    def drop(*a):
+        raise OSError("connection reset")
+    c, _ = client(**{"uid SEARCH": drop}, list=("OK", [rb'(\HasNoChildren) "." INBOX']), append=("OK", [None]))
+    assert c.append("INBOX", b"raw", (), message_id="<m@x>") is None
