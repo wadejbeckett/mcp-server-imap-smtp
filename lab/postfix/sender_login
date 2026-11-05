@@ -1,0 +1,6 @@
+# Which signed-in mailbox may use which envelope sender (smtpd_sender_login_maps).
+# sales@example.test is a shared identity alice may send as; nobody else may.
+alice@example.test  alice@example.test
+bob@example.test    bob@example.test
+sales@example.test  alice@example.test
+carol@example.org   carol@example.org

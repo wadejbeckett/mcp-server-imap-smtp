@@ -5,3 +5,4 @@ __pycache__/
 deploy/dist/
 .scratch/
 *.egg-info/
+lab/.state/

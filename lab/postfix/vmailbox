@@ -1,0 +1,4 @@
+# Lab mail domains' recipients (Postfix virtual_mailbox_maps). Lab fixture only.
+alice@example.test  ok
+bob@example.test    ok
+carol@example.org   ok
