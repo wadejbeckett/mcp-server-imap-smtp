@@ -614,3 +614,94 @@ def test_draft_and_send_describe_the_attachment_rules(env):
         assert "exactly one of base64 or source_uid" in listed[name].description
         assert "APPENDLIMIT" in listed[name].description and "Folder names work" in listed[name].description
     assert "exactly one of: `index`" in listed["mail_attachment"].description
+
+
+# --- review findings (PR 4) ------------------------------------------------------------------------------
+
+def _alternative(plain: bytes, html: bytes) -> bytes:
+    return (b"From: c@x.co.za\r\nTo: me@x.co.za\r\nSubject: s\r\nMessage-ID: <9@x>\r\nMIME-Version: 1.0\r\n"
+            b"Content-Type: multipart/alternative; boundary=a\r\n\r\n--a\r\nContent-Type: text/plain\r\n\r\n"
+            + plain + b"\r\n--a\r\nContent-Type: text/html\r\n\r\n" + html + b"\r\n--a--\r\n")
+
+
+def test_quote_uses_the_part_the_ai_read_not_a_different_html_alternative():
+    orig = _alternative(b"Benign text", b"<p>Pay to <a href='https://evil.example/'>new account 123</a></p>")
+    assert render.summarise(orig)["text"] == "Benign text"
+    for m in (compose.reply(orig, "me@x.co.za", "ok", html="<p>ok</p>"),
+              compose.forward(orig, "me@x.co.za", ["b@x.co.za"], "fyi", html="<p>fyi</p>", mode="inline")):
+        html = parse(m.as_bytes()).get_body(("html",)).get_content()
+        assert "Benign text" in html and "evil.example" not in html and "new account" not in html
+
+
+def test_html_only_original_is_still_quoted_as_html():
+    orig = _alternative(b"   ", b"<p>Only <b>html</b></p>")
+    assert "<b>html</b>" in render.quotable_html(orig)
+
+
+@pytest.mark.parametrize("html,expect", [
+    (b'<div><span style="display:none"></div>VISIBLE after', "VISIBLE after"),
+    (b"<table><tr><td hidden>h<td>v</table>after", "after"),
+])
+def test_unclosed_hidden_markup_does_not_swallow_the_rest(html, expect):
+    orig = _alternative(b"", html)
+    assert expect in render.summarise(orig)["text"]
+    quoted = render.quotable_html(orig)
+    assert expect in quoted and "h<" not in quoted.replace("<th", "")
+
+
+def test_a_forwarded_original_keeps_its_bytes():
+    orig = (b"From: c@x.co.za\r\nTo: me@x.co.za\r\nSubject: s\r\nMessage-ID: <9@x>\r\nMIME-Version: 1.0\r\n"
+            b"Content-Type: multipart/related; boundary=B\r\n\r\n--B\r\nContent-Type: text/html\r\n\r\n<p>x</p>\r\n"
+            b"--B\r\nContent-Type: image/png\r\nContent-ID: <i@x>\r\n\r\nzz\r\n--B--\r\n")
+    m = compose.forward(orig, "me@x.co.za", ["b@x.co.za"], "fyi", files=[f()])
+    inner = list(parse(m.as_bytes()).iter_attachments())[0]
+    assert inner.get_payload(0).get_param("type") is None
+    assert b'type="text/html"' not in m.as_bytes()
+
+
+def test_inline_forward_parses_the_original_once(monkeypatch):
+    orig = raw_message(attachments=[(f"{i}.pdf", "application/pdf", PDF) for i in range(5)])
+    calls = []
+    real = render._parse
+    monkeypatch.setattr(render, "_parse", lambda raw: calls.append(1) or real(raw))
+    compose.original_files(orig)
+    assert len(calls) == 1
+
+
+@pytest.mark.anyio
+async def test_one_source_message_is_fetched_once(env):
+    orig = raw_message(attachments=[("q.pdf", "application/pdf", PDF)])
+    srv, fake = build(env, FakeImap({("INBOX", 5): orig}))
+    await srv.call_tool("mail_draft", {**DRAFT, "attachments": [
+        {"source_folder": "INBOX", "source_uid": 5, "source_part": "2"}] * 3})
+    assert len(fake.named("fetch_raw")) == 1
+    assert len(list(appended(fake).iter_attachments())) == 3
+
+
+@pytest.mark.anyio
+async def test_source_reads_stop_at_the_memory_guard(env, monkeypatch):
+    monkeypatch.setattr(tools_mod, "SOURCE_BYTES", 1000)
+    msgs = {("INBOX", u): raw_message(mid=f"<{u}@x>", body="x" * 600) for u in (5, 6)}
+    srv, fake = build(env, FakeImap(msgs))
+    with pytest.raises(ToolError, match="add up to more than"):
+        await srv.call_tool("mail_draft", {**DRAFT, "attachments": [
+            {"source_folder": "INBOX", "source_uid": 5}, {"source_folder": "INBOX", "source_uid": 6}]})
+    assert fake.named("append") == []
+
+
+@pytest.mark.parametrize("text,expect", [("52428800", 52428800), ("0", None), ("", None), ("²", None),
+                                         ("١٢٣", None), ("12a", None), (" 10 ", 10)])
+def test_limit_values_are_ascii_digits_only(text, expect):
+    from mcp_server_imap_smtp.mail.imap import limit_value
+    assert limit_value(text) == expect
+
+
+def test_append_limit_with_a_non_ascii_digit_is_no_limit():
+    c, _ = imap_client("IMAP4rev1 APPENDLIMIT=²".encode())
+    assert c.append_limit("Drafts") is None
+
+
+def test_unusable_charset_from_stored_mail_is_left_out():
+    m = compose.new("me@x.co.za", ["a@b.co"], "Hi", "body",
+                    files=[compose.file("a.txt", "text/plain", b"x", charset="utf-8\r\nX-Evil: 1")])
+    assert b"X-Evil" not in m.as_bytes()

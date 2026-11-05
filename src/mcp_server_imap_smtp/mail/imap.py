@@ -195,6 +195,16 @@ _CODE_REASONS = {
 }
 
 
+_DIGITS = re.compile(r"[0-9]{1,15}")
+
+
+def limit_value(text: str) -> int | None:
+    """A size limit a server announced (SMTP SIZE, IMAP APPENDLIMIT) as bytes; None for anything but ASCII
+    digits, and for 0, which both define as no fixed limit."""
+    text = (text or "").strip()
+    return int(text) if _DIGITS.fullmatch(text) and int(text) > 0 else None
+
+
 class ImapClient:
     def __init__(self, conn: imaplib.IMAP4, address: str):
         self.c, self.address = conn, address
@@ -397,16 +407,15 @@ class ImapClient:
         caps = self.capabilities()
         for cap in caps:
             if cap.startswith("APPENDLIMIT="):
-                value = cap.partition("=")[2]
-                return int(value) if value.isdigit() and int(value) > 0 else None
+                return limit_value(cap.partition("=")[2])
         if "APPENDLIMIT" not in caps:
             return None
         try:
             data = self._ok(*self.c.status(_mbox(self.resolve_folder(folder)), "(APPENDLIMIT)"), "STATUS")
         except (MailError, imaplib.IMAP4.error):
             return None
-        m = re.search(rb"APPENDLIMIT (\d+)", data[0] or b"", re.IGNORECASE)
-        return int(m.group(1)) if m and int(m.group(1)) > 0 else None
+        m = re.search(rb"APPENDLIMIT ([0-9]+)", data[0] or b"", re.IGNORECASE)
+        return limit_value(m.group(1).decode("ascii")) if m else None
 
     def namespaces(self) -> dict:
         """The server's namespaces (RFC 2342). A server without NAMESPACE has one personal namespace with no

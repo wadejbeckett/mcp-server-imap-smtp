@@ -142,9 +142,33 @@ def _decoded(n: int, a: Attachment) -> compose.File:
         raise ToolError(str(exc)) from None
 
 
-def _from_source(c, a: Attachment) -> compose.File:
+SOURCE_BYTES = 50_000_000     # stored messages one call may read for source_* references (guards memory only)
+
+
+class _Fetched:
+    """Source messages read during one call: each (mailbox, folder, uid) once, and no more than SOURCE_BYTES
+    in all, so 100 references cannot download 100 large messages. A guard on the process, not a send limit:
+    the message that results is still held to the mail server's own SIZE and APPENDLIMIT."""
+
+    def __init__(self):
+        self.raw: dict[tuple[str, str, int], bytes] = {}
+        self.total = 0
+
+    def get(self, c, a: "Attachment") -> bytes:
+        key = (c.address if hasattr(c, "address") else "", a.source_folder, a.source_uid)
+        if key not in self.raw:
+            raw = c.fetch_raw(a.source_folder, a.source_uid)
+            self.total += len(raw)
+            if self.total > SOURCE_BYTES:
+                raise MailError(f"the referenced messages add up to more than {SOURCE_BYTES // 1_000_000} MB; "
+                                "attach parts of fewer or smaller messages")
+            self.raw[key] = raw
+        return self.raw[key]
+
+
+def _from_source(c, a: Attachment, fetched: "_Fetched | None" = None) -> compose.File:
     """The part a source reference names, read from the session c of the mailbox that holds it."""
-    raw = c.fetch_raw(a.source_folder, a.source_uid)
+    raw = (fetched or _Fetched()).get(c, a)
     if a.source_part is None:
         return compose.file(a.filename or f"message-{a.source_uid}.eml", "message/rfc822", raw,
                             a.disposition, a.content_id)
@@ -161,8 +185,7 @@ def _attached(m) -> list[dict[str, Any]]:
     Their names may come from other people's mail, so a result that lists them carries content_notice."""
     out = []
     for p in m.iter_attachments() if m.get_content_type() == "multipart/mixed" else ():
-        out.append({"filename": p.get_filename(), "content_type": p.get_content_type(),
-                    "size": len(render.Part(p, "", None).data())})
+        out.append({"filename": p.get_filename(), "content_type": p.get_content_type(), "size": render._size(p)})
     return out
 FOLDER_NOTE = ("Folder names work on every mailbox whatever its server calls them: role names (inbox, sent, drafts, "
                "trash, junk, archive), common names (\"Sent Items\", \"Spam\", \"Deleted Items\") and names with or "
@@ -522,7 +545,8 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
             return opener(cred.server, address, cred.password)
         return lease.session(address, lambda: opener(cred.server, address, cred.password))
 
-    async def sources(tool_name: str, mailbox: str | None, items: list[Attachment]) -> dict[int, compose.File]:
+    async def sources(tool_name: str, mailbox: str | None, items: list[Attachment],
+                      fetched: _Fetched) -> dict[int, compose.File]:
         """The files that need no session on the call's own mailbox: base64 decoded, and the parts named on other
         mailboxes, each mailbox read in a call of its own (one counted session at a time). {position: file}."""
         _, target, _ = creds(mailbox)
@@ -534,14 +558,14 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         for box, positions in others.items():
             def work(addr, cred, positions=positions):
                 with imap(addr, cred) as c:
-                    return {n: _from_source(c, items[n]) for n in positions}
+                    return {n: _from_source(c, items[n], fetched) for n in positions}
             found.update(await run(tool_name, box, work, count=len))
         return found
 
-    def files_for(c, items: list[Attachment], ready: dict[int, compose.File]) -> list[compose.File]:
+    def files_for(c, items: list[Attachment], ready: dict[int, compose.File], fetched: _Fetched) -> list[compose.File]:
         """Every attachment in order: those in `ready` (decoded base64, parts read from other mailboxes), the
         rest (source parts in this mailbox) read on session c."""
-        return [ready[n] if n in ready else _from_source(c, a) for n, a in enumerate(items)]
+        return [ready[n] if n in ready else _from_source(c, a, fetched) for n, a in enumerate(items)]
 
     @tool(READ)
     async def mail_accounts() -> dict[str, Any]:
@@ -816,11 +840,12 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         if replace_draft_uid is not None:
             _uid(replace_draft_uid)
         items = _check_attachments(attachments)
-        fetched = await sources("mail_draft", mailbox, items)
+        fetched = _Fetched()
+        ready = await sources("mail_draft", mailbox, items, fetched)
 
         def work(a, cred):
             with imap(a, cred) as c:
-                files = files_for(c, items, fetched)
+                files = files_for(c, items, ready, fetched)
                 if replying:
                     m = compose.reply(c.fetch_raw(reply_to_folder, reply_to_uid), a, text, html,
                                       fetch=fetch_image, quote=quote, files=files)
@@ -913,12 +938,13 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         if not replying and not forwarding and (not to or not subject):
             raise ToolError("a new message needs `to` and `subject`")
         items = _check_attachments(attachments)
-        fetched = await sources("mail_send", mailbox, items)
+        fetched = _Fetched()
+        ready = await sources("mail_send", mailbox, items, fetched)
         grant = caller_grant() or "?"
 
         def work(a, cred):
             with imap(a, cred) as c:
-                files = files_for(c, items, fetched)
+                files = files_for(c, items, ready, fetched)
                 if replying:
                     m = compose.reply(c.fetch_raw(reply_to_folder, reply_to_uid), a, text, html, reply_all,
                                       fetch=fetch_image, quote=quote, files=files)

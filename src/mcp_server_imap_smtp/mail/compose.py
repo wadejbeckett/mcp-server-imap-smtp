@@ -127,16 +127,22 @@ def _add_file(m: EmailMessage, f: File) -> None:
     part = m.get_payload()[-1]
     part.set_param("name", f.filename)           # older clients read the name from Content-Type
     if f.charset and maintype == "text":
-        part.set_param("charset", f.charset)
+        try:
+            part.set_param("charset", f.charset)
+        except ValueError:       # a charset taken from stored mail that cannot be a parameter: leave it out
+            pass
 
 
 def _typed_related(m: EmailMessage) -> None:
     """D11: every multipart/related names the type of its root (the first part), RFC 2387 s3.1."""
-    for part in m.walk():
-        if part.get_content_type() == "multipart/related":
-            parts = part.get_payload()
-            if parts:
-                part.set_param("type", parts[0].get_content_type())
+    # Not m.walk(): it descends into an attached message/rfc822, whose bytes must stay as received.
+    if m.get_content_maintype() != "multipart":
+        return
+    parts = list(m.iter_parts())
+    if m.get_content_type() == "multipart/related" and parts:
+        m.set_param("type", parts[0].get_content_type())
+    for part in parts:
+        _typed_related(part)
 
 
 def _append_html(html: str, tail: str) -> str:
@@ -307,11 +313,8 @@ def _forward_block(o: dict) -> list[tuple[str, str]]:
 
 def original_files(original_raw: bytes) -> list[File]:
     """Every attachment and inline part of a message (render's list), as files to carry in an inline forward."""
-    out = []
-    for row in render.summarise(original_raw)["attachments"]:
-        p = render.find_part(original_raw, index=row["index"])
-        out.append(file(p.filename, p.content_type, p.data(), "attachment", charset=p.charset))
-    return out
+    return [file(p.filename, p.content_type, p.data(), "attachment", charset=p.charset)
+            for p in render.attachment_parts(original_raw)]
 
 
 def forward(original_raw: bytes, from_addr, to, text, html=None, mode: str = "attachment", files=(),

@@ -439,6 +439,13 @@ class Part:
         return _get_attachment_data(self.part)
 
 
+def attachment_parts(raw: bytes) -> list[Part]:
+    """Every part summarise() lists as an attachment, from one parse of the message."""
+    msg = _parse(raw)
+    ids = _section_ids(msg)
+    return [Part(p, f"attachment-{i}", ids.get(id(p))) for i, p in enumerate(_attachments(msg))]
+
+
 _PART_ID = re.compile(r"[1-9]\d{0,3}(\.[1-9]\d{0,3}){0,19}")
 
 
@@ -489,6 +496,7 @@ class _Quotable(HTMLParser):
         self.out: list[str] = []
         self.dropping: list[str] = []     # open tags inside an element whose content is left out
         self.open: list[str] = []
+        self.dropped_at = 0               # len(self.open) when the dropped element started
 
     def handle_starttag(self, tag, attrs):
         if self.dropping:
@@ -499,6 +507,7 @@ class _Quotable(HTMLParser):
         if tag in _QUOTE_DROP or _hidden(tag, named):
             if tag not in _VOID:
                 self.dropping.append(tag)
+                self.dropped_at = len(self.open)
             return
         if tag == "img":
             alt = (named.get("alt") or "").strip()
@@ -526,7 +535,12 @@ class _Quotable(HTMLParser):
             if tag in self.dropping:
                 while self.dropping.pop() != tag:
                     pass
-            return
+                return
+            if tag not in self.open[:self.dropped_at]:
+                return
+            # Closes an element opened before the dropped one, which was never closed: stop dropping here, as
+            # _Visible does, so the quote keeps what the AI was shown.
+            self.dropping.clear()
         if tag in self.open:
             while True:
                 t = self.open.pop()
@@ -543,10 +557,11 @@ class _Quotable(HTMLParser):
 
 
 def quotable_html(raw: bytes) -> str:
-    """The original message's body as safe HTML to quote: its HTML part through the allowlist above, else its
-    plain text escaped with line breaks kept; "" when it has neither."""
+    """The original message's body as safe HTML to quote, from the same part summarise() reads: the plain text
+    (escaped, line breaks kept) when it has any, else the HTML part through the allowlist above. An HTML
+    alternative that says something else than the plain part is never quoted, since the AI never saw it."""
     _, html, text = _choose(_parse(raw))
-    if html is not None:
+    if html is not None and not text:      # the HTML only when it is what summarise() showed the AI
         try:
             source = html.get_content()
         except (LookupError, UnicodeDecodeError):
