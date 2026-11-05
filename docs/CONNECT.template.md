@@ -86,8 +86,10 @@ For example:
 - "Find the March invoice from Smith & Co and read me the PDF."
 - "Draft a reply to Jane saying we'll deliver on Friday."
 - "Reply to Jane that we'll deliver on Friday and send it." Most AI apps show you the message and ask you to approve it before it goes.
+- "Forward the Smith & Co invoice to accounts@yourcompany.co.za."
+- "Draft a reply to Jane and attach the quote you just wrote." The AI app can attach files it made or that you gave it.
 
-Good to know: mail can only be moved to folders that already exist. Attachments over 5 MB can't be opened. Scanned PDFs, Office files and pictures may not be readable.
+Good to know: mail can only be moved to folders that already exist. Attachments over 5 MB can't be opened. Scanned PDFs, Office files and pictures may not be readable. Files attached together in one message can add up to about 20 MB; a message larger than your mail server accepts is stopped before it is sent, and the AI app is told the limit.
 
 ## Connecting several mailboxes
 

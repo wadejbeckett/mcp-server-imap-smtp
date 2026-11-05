@@ -193,3 +193,67 @@ async def test_search_everywhere_finds_the_sent_copy(live):
     await find(srv, "INBOX", t)
     out = await call(srv, "mail_search", folder="*", subject=t)
     assert {m["folder"] for m in out["messages"]} >= {"INBOX"} and out["total"] >= 2  # INBOX and Sent
+
+
+@pytest.mark.anyio
+async def test_draft_with_two_attachments_reads_back_as_raw_mime(live, mailserver):
+    """Ticket 08: a draft with two base64 attachments (one with a non-ASCII name) and an HTML body is stored
+    as mixed(alternative(text, html), pdf, txt) with RFC 2231 filenames, and the bytes come back unchanged."""
+    import base64
+    from email import policy
+    from email.parser import BytesParser
+    srv, addr, _, tag = live
+    t = tag("attachments")
+    pdf = b"%PDF-1.4\n" + bytes(range(256)) * 20
+    name = "Rechnung für Oktober – endgültig.pdf"
+    out = await call(srv, "mail_draft", to=[addr], subject=t, text="see attached", html="<p>see attached</p>",
+                     attachments=[{"filename": name, "content_type": "application/pdf",
+                                   "base64": base64.b64encode(pdf).decode()},
+                                  {"filename": "notes.txt", "content_type": "text/plain",
+                                   "base64": base64.b64encode("Grüße\n".encode()).decode()}])
+    assert [a["filename"] for a in out["attachments"]] == [name, "notes.txt"]
+    row = await find(srv, out["saved_to"], t)
+    server, address, password = mailserver
+    with ImapClient.open(server, address, password) as c:
+        raw = c.fetch_raw(out["saved_to"], row["uid"])
+    assert b"filename*" in raw                                           # RFC 2231 on the wire
+    m = BytesParser(policy=policy.default).parsebytes(raw)
+    assert m.get_content_type() == "multipart/mixed"
+    assert [p.get_content_type() for p in m.iter_parts()] == ["multipart/alternative", "application/pdf",
+                                                              "text/plain"]
+    files = {p.get_filename(): p.get_payload(decode=True) for p in m.iter_attachments()}
+    assert files == {name: pdf, "notes.txt": "Grüße\n".encode()}
+    read = await call(srv, "mail_read", folder=out["saved_to"], uid=row["uid"])
+    assert [(a["part_id"], a["filename"]) for a in read["attachments"]] == [("2", name), ("3", "notes.txt")]
+    got = await call(srv, "mail_attachment", folder=out["saved_to"], uid=row["uid"], part="3")
+    assert got["text"] == "Grüße\n"
+
+
+@pytest.mark.anyio
+async def test_sent_attachment_reattached_by_reference(live, mailserver):
+    """Send a file to the test mailbox, then attach that part to a draft by source reference (no bytes
+    through the AI) and forward the message inline into a draft that carries the original's file."""
+    import base64
+    from email import policy
+    from email.parser import BytesParser
+    srv, addr, _, tag = live
+    t = tag("by-reference")
+    pdf = b"%PDF-1.4 by reference\n" * 50
+    await call(srv, "mail_send", to=[addr], subject=t, text="original",
+               attachments=[{"filename": "ref.pdf", "content_type": "application/pdf",
+                             "base64": base64.b64encode(pdf).decode()}])
+    row = await find(srv, "INBOX", t)
+    part = (await call(srv, "mail_read", folder="INBOX", uid=row["uid"]))["attachments"][0]["part_id"]
+    t2 = tag("by-reference-draft")
+    draft = await call(srv, "mail_draft", to=[addr], subject=t2, text="again",
+                       attachments=[{"source_folder": "INBOX", "source_uid": row["uid"], "source_part": part}])
+    fwd = await call(srv, "mail_draft", to=[addr], text="see below", forward_folder="INBOX",
+                     forward_uid=row["uid"], forward_mode="inline")
+    server, address, password = mailserver
+    with ImapClient.open(server, address, password) as c:
+        for out in (draft, fwd):
+            raw = c.fetch_raw(out["saved_to"], out["uid"])
+            m = BytesParser(policy=policy.default).parsebytes(raw)
+            assert [(p.get_filename(), p.get_payload(decode=True)) for p in m.iter_attachments()] == [("ref.pdf", pdf)]
+        c.ensure_folder(TEST_FOLDER)
+        c.move(fwd["saved_to"], [fwd["uid"]], TEST_FOLDER)        # its subject is "Fwd: <tag>": not found by tag

@@ -917,12 +917,12 @@ async def test_an_attachment_is_converted_after_the_session_is_handed_back(tmp_p
     raw = raw_message(attachments=[("a.txt", "text/plain", b"plain contents")])
     srv = pooled(tool_env(tmp_path, monkeypatch), lambda a: PoolImap(a, {("INBOX", 5): raw}))
     held = []
-    real = tools_mod.render.attachment
+    real = tools_mod.render.find_part
 
-    def attachment(*a):
+    def find_part(*a, **k):
         held.append(srv.sessions.counts("mail1.hosting.example")["idle"])
-        return real(*a)
-    monkeypatch.setattr(tools_mod.render, "attachment", attachment)
+        return real(*a, **k)
+    monkeypatch.setattr(tools_mod.render, "find_part", find_part)
     out = (await srv.call_tool("mail_attachment", {"folder": "INBOX", "uid": 5, "index": 0})).structured_content
     assert out["text"].strip() == "plain contents" and held == [1]
 

@@ -113,6 +113,9 @@ class FakeImap:
     def move(self, folder, uids, dest, copy=False):
         self.calls.append(("move", folder, list(uids), dest, copy))
 
+    def append_limit(self, folder):
+        return None
+
     def append(self, folder, raw, flags, message_id=None):
         self.calls.append(("append", folder, raw, tuple(flags)))
         return 11
@@ -576,7 +579,8 @@ async def test_draft_is_appended_to_drafts_with_draft_flag(env):
     m = message_from_bytes(raw)
     assert (folder, flags) == ("Drafts", ("\\Draft", "\\Seen"))
     assert (m["From"], m["To"], m["Cc"], m["Subject"]) == ("me@x.co.za", "c@x.co.za", "d@x.co.za", "Hi")
-    assert out == {"saved_to": "Drafts", "uid": 11, "message_id": m["Message-ID"], "subject": "Hi"}
+    assert out == {"saved_to": "Drafts", "uid": 11, "message_id": m["Message-ID"], "subject": "Hi",
+                   "size": len(raw.replace(b"\n", b"\r\n"))}
 
 
 @pytest.mark.anyio
@@ -627,13 +631,14 @@ async def test_draft_reply_is_threaded_and_replaces_old_draft(env):
     m = message_from_bytes(fake.named("append")[0][2])
     assert m["In-Reply-To"] == "<9@x>" and m["To"] == "other@x.co.za" and m["Subject"] == "Re: Quote"
     assert fake.named("move") == [("move", "Drafts", [2], "Trash", False)]
-    assert out == {"saved_to": "Drafts", "uid": 11, "message_id": m["Message-ID"], "subject": "Re: Quote"}
+    assert out == {"saved_to": "Drafts", "uid": 11, "message_id": m["Message-ID"], "subject": "Re: Quote",
+                   "size": out["size"]}
 
 
 @pytest.mark.anyio
 async def test_draft_reply_refuses_a_subject_it_would_ignore(env):
     srv, fake = build(env, FakeImap({("INBOX", 5): raw_message()}))
-    with pytest.raises(ToolError, match="`subject` is not supported on a reply draft"):
+    with pytest.raises(ToolError, match="`subject` is not supported on a reply"):
         await srv.call_tool("mail_draft", {"to": ["c@x.co.za"], "subject": "New subject", "text": "t",
                                            "reply_to_folder": "INBOX", "reply_to_uid": 5})
     assert fake.named("append") == [] and srv.opened == []

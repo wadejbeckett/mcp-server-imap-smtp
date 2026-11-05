@@ -10,7 +10,7 @@ from email import encoders
 from email.message import EmailMessage
 from email.utils import parseaddr
 
-from .compose import envelope_recipients
+from .compose import envelope_recipients, too_large, wire_size
 from .hosts import Connector, MailServer
 from .imap import MailAuthError, MailError
 from .resolve import normalise_address
@@ -121,6 +121,13 @@ def _for_server(s: smtplib.SMTP, msg: EmailMessage, envelope: list[str]) -> tupl
     return wire, []
 
 
+def size_limit(s: smtplib.SMTP) -> int | None:
+    """The SIZE the server announced in EHLO (RFC 1870), or None: no SIZE, SIZE without a number, or 0 (which
+    RFC 1870 s4 defines as no fixed limit)."""
+    value = (s.esmtp_features.get("size") or "").strip() if s.has_extn("size") else ""
+    return int(value) if value.isdigit() and int(value) > 0 else None
+
+
 def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc=(),
          local_hostname: str | None = None) -> list[str]:
     """Send msg as the mailbox through server (port server.smtp_port); returns the recipients the
@@ -150,8 +157,11 @@ def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc
         if code != 220:
             raise MailError(f"SMTP greeting {code}")
         s.ehlo()
-        _login(s, address, password)
         wire, options = _for_server(s, msg, [address, *rcpts])
+        limit = size_limit(s)
+        if limit is not None and wire_size(wire) > limit:      # refused before AUTH and before MAIL FROM
+            raise MailError(too_large(wire_size(wire), limit, "the mail server (SMTP SIZE)"))
+        _login(s, address, password)
         refused = s.send_message(wire, from_addr=address, to_addrs=rcpts, mail_options=options)
         return [r for r in rcpts if r not in refused]
     except smtplib.SMTPRecipientsRefused as exc:

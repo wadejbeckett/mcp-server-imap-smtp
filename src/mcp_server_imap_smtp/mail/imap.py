@@ -200,6 +200,7 @@ class ImapClient:
         self.c, self.address = conn, address
         self._folders: list[Folder] | None = None
         self._ns: dict | None = None
+        self._caps: frozenset[str] | None = None
 
     @classmethod
     def open(cls, server: MailServer, address: str, password: str) -> "ImapClient":
@@ -376,6 +377,36 @@ class ImapClient:
         data = self._ok(*self.c.status(_mbox(folder), "(MESSAGES UNSEEN)"), "STATUS")
         nums = dict(re.findall(rb"(MESSAGES|UNSEEN) (\d+)", data[0]))
         return {"messages": int(nums.get(b"MESSAGES", 0)), "unseen": int(nums.get(b"UNSEEN", 0))}
+
+    def capabilities(self) -> frozenset[str]:
+        """The capabilities the server lists after login, upper case. imaplib keeps the list from before login,
+        which may be shorter (Dovecot), so CAPABILITY is asked once per session."""
+        if self._caps is None:
+            try:
+                typ, data = self.c.capability()
+                text = data[0].decode(errors="replace") if typ == "OK" and data and data[0] else ""
+            except imaplib.IMAP4.error:
+                text = ""
+            self._caps = frozenset(text.upper().split()) or frozenset(
+                str(c).upper() for c in (getattr(self.c, "capabilities", None) or ()))
+        return self._caps
+
+    def append_limit(self, folder: str) -> int | None:
+        """The largest message the server accepts into folder (RFC 7889 APPENDLIMIT), or None when it does not
+        say. APPENDLIMIT=n holds for every folder; a bare APPENDLIMIT means each folder's STATUS tells."""
+        caps = self.capabilities()
+        for cap in caps:
+            if cap.startswith("APPENDLIMIT="):
+                value = cap.partition("=")[2]
+                return int(value) if value.isdigit() and int(value) > 0 else None
+        if "APPENDLIMIT" not in caps:
+            return None
+        try:
+            data = self._ok(*self.c.status(_mbox(self.resolve_folder(folder)), "(APPENDLIMIT)"), "STATUS")
+        except (MailError, imaplib.IMAP4.error):
+            return None
+        m = re.search(rb"APPENDLIMIT (\d+)", data[0] or b"", re.IGNORECASE)
+        return int(m.group(1)) if m and int(m.group(1)) > 0 else None
 
     def namespaces(self) -> dict:
         """The server's namespaces (RFC 2342). A server without NAMESPACE has one personal namespace with no

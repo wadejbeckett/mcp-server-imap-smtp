@@ -61,7 +61,8 @@ class ScriptedServer(threading.Thread):
                 verb = line.upper()
                 if verb.startswith("EHLO"):
                     self.ehlo_name = line.split(" ", 1)[1]
-                    ext = "".join(f"250-{e}\r\n" for e in self.extensions.split())
+                    exts = self.extensions.split() if isinstance(self.extensions, str) else self.extensions
+                    ext = "".join(f"250-{e}\r\n" for e in exts)
                     self.sock.sendall(f"250-mail.test\r\n{ext}250 AUTH {self.mechs}\r\n".encode())
                 elif verb.startswith("AUTH PLAIN"):
                     self._plain(line.split(" ", 2)[2])

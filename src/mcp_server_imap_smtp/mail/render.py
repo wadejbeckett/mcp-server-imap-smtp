@@ -372,9 +372,17 @@ def summarise(raw: bytes, body_cap: int = 50_000) -> dict:
 
     truncated = len(text) > body_cap
     atts = []
+    ids = _section_ids(msg)
     for i, part in enumerate(_attachments(msg)):
-        atts.append({"index": i, "filename": part.get_filename() or f"attachment-{i}",
-                     "content_type": part.get_content_type(), "size": _size(part)})
+        row = {"index": i, "part_id": ids.get(id(part)), "filename": part.get_filename() or f"attachment-{i}",
+               "content_type": part.get_content_type(), "size": _size(part)}
+        disposition = part.get_content_disposition()
+        if disposition:
+            row["disposition"] = disposition
+        cid = _content_id(part)
+        if cid:
+            row["content_id"] = cid
+        atts.append(row)
     return {
         "message_id": str(msg.get("Message-ID", "")), "date": str(msg.get("Date", "")), "from": str(msg.get("From", "")),
         "to": str(msg.get("To", "")), "cc": str(msg.get("Cc", "")), "subject": str(msg.get("Subject", "")),
@@ -389,3 +397,164 @@ def attachment(raw: bytes, index: int) -> tuple[str, str, bytes, str | None]:
     part = parts[index]
     data = _get_attachment_data(part)
     return part.get_filename() or f"attachment-{index}", part.get_content_type(), data, part.get_content_charset()
+
+
+def _section_ids(msg: EmailMessage) -> dict[int, str]:
+    """IMAP section numbers (RFC 3501 s6.4.5 BODY[section]) of every part, keyed by id(part): a single-part
+    message's body is "1"; the parts of a multipart are numbered 1, 2, ... and nested multiparts add a level
+    ("2.1"). A message/* part is one part here: its inside is not numbered, as it is never descended."""
+    ids: dict[int, str] = {}
+
+    def visit(part: EmailMessage, prefix: str) -> None:
+        for i, sub in enumerate(part.iter_parts(), 1):
+            sid = f"{prefix}.{i}" if prefix else str(i)
+            ids[id(sub)] = sid
+            if sub.get_content_maintype() == "multipart":
+                visit(sub, sid)
+
+    if msg.get_content_maintype() == "multipart":
+        visit(msg, "")
+    else:
+        ids[id(msg)] = "1"
+    return ids
+
+
+def _content_id(part: EmailMessage) -> str:
+    """The part's Content-ID without its angle brackets; "" when it has none."""
+    return str(part.get("Content-ID", "") or "").strip().strip("<>").strip()
+
+
+class Part:
+    """One part of a stored message, as found by find_part: what an outgoing message needs to carry it."""
+
+    def __init__(self, part: EmailMessage, name: str, part_id: str | None):
+        self.part, self.part_id = part, part_id
+        self.filename = part.get_filename() or name
+        self.content_type = part.get_content_type()
+        self.content_id = _content_id(part)
+        self.disposition = part.get_content_disposition()
+        self.charset = part.get_content_charset()
+
+    def data(self) -> bytes:
+        return _get_attachment_data(self.part)
+
+
+_PART_ID = re.compile(r"[1-9]\d{0,3}(\.[1-9]\d{0,3}){0,19}")
+
+
+def find_part(raw: bytes, index: int | None = None, part: str | None = None,
+              content_id: str | None = None) -> Part:
+    """One part of a message by exactly one of: its position in summarise()["attachments"], its IMAP section
+    number (any part that is not a multipart, the body included) or its Content-ID. Raises LookupError with
+    a message for the AI when there is no such part."""
+    msg = _parse(raw)
+    if index is not None:
+        parts = _attachments(msg)
+        if not 0 <= index < len(parts):
+            raise LookupError(f"no attachment at index {index}")
+        return Part(parts[index], f"attachment-{index}", _section_ids(msg).get(id(parts[index])))
+    ids = _section_ids(msg)
+    if part is not None:
+        wanted = part.strip()
+        if not _PART_ID.fullmatch(wanted):
+            raise LookupError(f"part {part!r} is not a part id like \"2\" or \"1.2\" (see mail_read attachments)")
+        for p in msg.walk():
+            if ids.get(id(p)) == wanted:
+                if p.get_content_maintype() == "multipart":
+                    raise LookupError(f"part {wanted} is a multipart container; name one of the parts inside it")
+                return Part(p, f"part-{wanted}", wanted)
+        raise LookupError(f"no part {wanted} in this message")
+    wanted = (content_id or "").strip().strip("<>").strip()
+    if not wanted:
+        raise LookupError("content_id is empty")
+    for p in msg.walk():
+        if id(p) in ids and p.get_content_maintype() != "multipart" and _content_id(p) == wanted:
+            return Part(p, f"part-{ids[id(p)]}", ids[id(p)])
+    raise LookupError(f"no part with Content-ID {wanted!r} in this message")
+
+
+# Quoting an original in an outgoing reply or inline forward (D9). Only plain formatting survives: no scripts,
+# styles, forms, images (a remote image would be fetched by every reader, a cid: image would point at nothing)
+# or attributes other than a link's http, https or mailto target. Hidden elements are left out, as they are
+# from what the AI reads, so the quote shows the reader what the AI saw.
+_QUOTE_TAGS = frozenset("a b blockquote br code div em h1 h2 h3 h4 h5 h6 hr i li ol p pre s small span strong "
+                        "sub sup table tbody td tfoot th thead tr u ul".split())
+_QUOTE_DROP = frozenset("script style head title template object embed iframe svg math noscript select "
+                        "textarea button form".split())
+
+
+class _Quotable(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out: list[str] = []
+        self.dropping: list[str] = []     # open tags inside an element whose content is left out
+        self.open: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if self.dropping:
+            if tag not in _VOID:
+                self.dropping.append(tag)
+            return
+        named = {k.lower(): v for k, v in attrs}
+        if tag in _QUOTE_DROP or _hidden(tag, named):
+            if tag not in _VOID:
+                self.dropping.append(tag)
+            return
+        if tag == "img":
+            alt = (named.get("alt") or "").strip()
+            if alt:
+                self.out.append(html_lib.escape(f"[{alt}]", quote=False))
+            return
+        if tag not in _QUOTE_TAGS:
+            return
+        kept = ""
+        if tag == "a":
+            href = (named.get("href") or "").strip()
+            if href.lower().startswith(("http://", "https://", "mailto:")):
+                kept = f' href="{html_lib.escape(href)}"'
+        if tag in _VOID:
+            self.out.append(f"<{tag}>")
+            return
+        self.open.append(tag)
+        self.out.append(f"<{tag}{kept}>")
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if self.dropping:
+            if tag in self.dropping:
+                while self.dropping.pop() != tag:
+                    pass
+            return
+        if tag in self.open:
+            while True:
+                t = self.open.pop()
+                self.out.append(f"</{t}>")
+                if t == tag:
+                    break
+
+    def handle_data(self, data):
+        if not self.dropping:
+            self.out.append(html_lib.escape(data, quote=False))
+
+    def result(self) -> str:
+        return "".join(self.out) + "".join(f"</{t}>" for t in reversed(self.open))
+
+
+def quotable_html(raw: bytes) -> str:
+    """The original message's body as safe HTML to quote: its HTML part through the allowlist above, else its
+    plain text escaped with line breaks kept; "" when it has neither."""
+    _, html, text = _choose(_parse(raw))
+    if html is not None:
+        try:
+            source = html.get_content()
+        except (LookupError, UnicodeDecodeError):
+            source = (html.get_payload(decode=True) or b"").decode("utf-8", "replace")
+        q = _Quotable()
+        q.feed(source)
+        q.close()
+        quoted = q.result()
+        if quoted.strip():
+            return quoted
+    return html_lib.escape(text, quote=False).replace("\n", "<br>\n")

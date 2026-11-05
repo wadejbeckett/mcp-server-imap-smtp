@@ -25,7 +25,8 @@ def test_truncation():
 def test_attachments():
     raw = eml(text="see attached", attach=b"%PDF-1.4 data")
     s = render.summarise(raw)
-    assert s["attachments"] == [{"index": 0, "filename": "inv.pdf", "content_type": "application/pdf", "size": 13}]
+    assert s["attachments"] == [{"index": 0, "part_id": "2", "filename": "inv.pdf", "content_type": "application/pdf",
+                                 "size": 13, "disposition": "attachment"}]
     assert render.attachment(raw, 0) == ("inv.pdf", "application/pdf", b"%PDF-1.4 data", None)
 
 def test_unknown_charset():
