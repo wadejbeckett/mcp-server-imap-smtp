@@ -13,7 +13,8 @@ import pytest
 
 from mcp_server_imap_smtp.mail import smtp as smtp_mod
 from mcp_server_imap_smtp.mail.imap import ImapClient, MailAuthError
-from tests._lab import CA_FILE, FLAT, HOST, PREFIXED, PROFILES, STRIPPED, context, require_lab, users
+from tests._lab import (CA_FILE, FLAT, HOST, PREFIXED, PROFILES, STRIPPED, context, record_commands, require_lab,
+                        users)
 
 pytestmark = pytest.mark.lab
 
@@ -73,6 +74,26 @@ def test_stripped_profile_lacks_move_uidplus_esearch():
     caps = imap_caps(STRIPPED)
     assert not {"MOVE", "UIDPLUS", "ESEARCH"} & caps
     assert {"IMAP4REV1", "SPECIAL-USE", "QUOTA"} <= caps   # everything else is still there
+
+
+def test_stripped_profile_only_hides_commands_so_record_commands_is_needed(lab_ca):
+    """Documents the limit of the stripped profile: Dovecot still runs UID MOVE there. Fallback tests
+    therefore check the commands the connector sent, and this checks that record_commands sees them."""
+    with ImapClient.open(STRIPPED.server(), ALICE, users()[ALICE]) as client:
+        with record_commands(client.c) as sent:
+            client.c.select("INBOX")
+            client.c.uid("MOVE", "1:*", "Archive")
+    assert [name for name, _ in sent] == ["SELECT", "UID MOVE"]
+
+
+def test_lab_refuses_to_relay_outside_its_domains():
+    """A signed-in user may send only to the lab's own domains, so no test mail can leave the lab."""
+    with smtplib.SMTP_SSL(HOST, FLAT.smtps, context=context(), timeout=10) as s:
+        s.login(ALICE, users()[ALICE])
+        s.mail(ALICE)
+        code, msg = s.rcpt("someone@example.net")
+        assert code == 554 and b"Relay access denied" in msg
+        assert s.rcpt(BOB)[0] == 250
 
 
 @pytest.mark.parametrize("profile,prefix", [(FLAT, ""), (PREFIXED, "INBOX."), (STRIPPED, "")],

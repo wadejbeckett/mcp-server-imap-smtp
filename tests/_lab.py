@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The container test lab (scripts/lab.sh, lab/): where each profile listens, its fixture users, and the lab
 CA. Lab tests are marked `lab` and deselected by default; run `scripts/lab.sh up`, then `pytest -m lab`."""
+import contextlib
+import imaplib
 import os
 import socket
 import ssl
@@ -68,3 +70,25 @@ def require_lab() -> None:
             socket.create_connection((HOST, p.imaps), timeout=3).close()
         except OSError:
             pytest.fail(f"lab profile {p.name} is not listening on {p.imaps}: run scripts/lab.sh up")
+
+
+@contextlib.contextmanager
+def record_commands(conn: imaplib.IMAP4):
+    """Record the IMAP commands sent on conn (an ImapClient's `.c`): yields a list of (name, args) tuples,
+    names upper-case and `UID x` as `UID X`. The stripped profile only hides MOVE, UIDPLUS and ESEARCH
+    from CAPABILITY, so fallback tests assert on this list that the connector never sent them."""
+    sent: list[tuple[str, tuple]] = []
+    original = conn._command
+
+    def spy(name, *args):
+        name = name.upper()
+        if name == "UID" and args:
+            name = f"UID {str(args[0]).upper()}"
+        sent.append((name, args))
+        return original(name if " " not in name else "UID", *args)
+
+    conn._command = spy
+    try:
+        yield sent
+    finally:
+        conn._command = original

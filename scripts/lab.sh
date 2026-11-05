@@ -10,7 +10,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="$ROOT/lab/.state"
-TLS="$STATE/tls"
+TLS="$STATE/tls"     # mounted into the containers: ca.pem, server.pem, server.key
+CAKEY="$STATE/ca"    # the CA key, never mounted
 IMAGE="mcp-imap-smtp-lab:latest"
 # profile:port-prefix. Host ports are <prefix><container port's last three digits>, e.g. flat IMAP 10993.
 PROFILES=(flat:10 prefixed:11 stripped:12)
@@ -21,22 +22,23 @@ ports() {   # profile prefix -> docker -p arguments
 }
 
 make_tls() {
-  [ -s "$TLS/ca.pem" ] && [ -s "$TLS/server.pem" ] && return 0
-  mkdir -p "$TLS"; chmod 700 "$STATE" "$TLS"
-  local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
+  [ -s "$TLS/ca.pem" ] && [ -s "$TLS/server.pem" ] && [ -s "$TLS/server.key" ] && return 0
+  mkdir -p "$TLS" "$CAKEY"; chmod 700 "$STATE" "$TLS" "$CAKEY"
+  local tmp; tmp="$(mktemp -d)"
   openssl req -x509 -new -nodes -newkey rsa:2048 -sha256 -days 3650 \
     -subj "/CN=mcp-server-imap-smtp test lab CA" \
     -addext "basicConstraints=critical,CA:true" -addext "keyUsage=critical,keyCertSign,cRLSign" \
-    -keyout "$TLS/ca.key" -out "$TLS/ca.pem" 2>/dev/null
+    -keyout "$CAKEY/ca.key" -out "$TLS/ca.pem" 2>/dev/null
   openssl req -new -nodes -newkey rsa:2048 -sha256 -subj "/CN=localhost" \
     -keyout "$TLS/server.key" -out "$tmp/server.csr" 2>/dev/null
   printf '%s\n' "basicConstraints=CA:false" "keyUsage=critical,digitalSignature,keyEncipherment" \
     "extendedKeyUsage=serverAuth" "subjectAltName=DNS:localhost,IP:127.0.0.1" > "$tmp/ext"
-  openssl x509 -req -in "$tmp/server.csr" -CA "$TLS/ca.pem" -CAkey "$TLS/ca.key" -CAcreateserial \
-    -CAserial "$tmp/ca.srl" -days 825 -sha256 -extfile "$tmp/ext" -out "$TLS/server.pem" 2>/dev/null
-  # The containers read the key as root; nobody else on the host needs it.
-  chmod 600 "$TLS"/*.key
-  echo "lab CA written to $TLS/ca.pem"
+  openssl x509 -req -in "$tmp/server.csr" -CA "$TLS/ca.pem" -CAkey "$CAKEY/ca.key" \
+    -CAserial "$tmp/ca.srl" -CAcreateserial -days 825 -sha256 -extfile "$tmp/ext" -out "$TLS/server.pem" 2>/dev/null
+  rm -rf "$tmp"
+  # The containers read the server key as root; nobody else on the host needs either key.
+  chmod 600 "$TLS/server.key" "$CAKEY/ca.key"
+  echo "lab CA written to $TLS/ca.pem (scripts/lab.sh clean renews it)"
 }
 
 wait_ready() {   # container: until Dovecot (993, 4190) and Postfix (465, 587) listen inside it

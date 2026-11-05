@@ -18,6 +18,9 @@ configure() {
     'virtual_mailbox_domains = example.test, example.org' \
     'virtual_mailbox_maps = texthash:/etc/postfix/lab/vmailbox' \
     'virtual_transport = lmtp:unix:private/dovecot-lmtp' \
+    'default_transport = error:5.7.1 the test lab delivers only to its own domains' \
+    'relay_transport = error:5.7.1 the test lab delivers only to its own domains' \
+    'disable_vrfy_command = yes' \
     'message_size_limit = 26214400' \
     'smtputf8_enable = yes' \
     'smtpd_tls_chain_files = /lab/tls/server.key, /lab/tls/server.pem' \
@@ -28,7 +31,8 @@ configure() {
     'smtpd_sasl_path = private/auth' \
     'smtpd_sender_login_maps = texthash:/etc/postfix/lab/sender_login'
   # Submission ports: 587 refuses everything until STARTTLS (security level encrypt); 465 is implicit TLS.
-  # Both require SASL and refuse an envelope sender the signed-in mailbox does not own.
+  # Both require SASL, refuse an envelope sender the signed-in mailbox does not own, and accept only
+  # recipients in the lab's own domains (reject_unauth_destination even after login), so no mail leaves.
   for svc in submission submissions; do
     postconf -M "$svc/inet=$svc inet n - n - - smtpd"
     postconf -P \
@@ -36,7 +40,7 @@ configure() {
       "$svc/inet/smtpd_sasl_auth_enable=yes" \
       "$svc/inet/smtpd_client_restrictions=permit_sasl_authenticated,reject" \
       "$svc/inet/smtpd_sender_restrictions=reject_sender_login_mismatch" \
-      "$svc/inet/smtpd_relay_restrictions=permit_sasl_authenticated,reject" \
+      "$svc/inet/smtpd_relay_restrictions=reject_unauth_destination" \
       "$svc/inet/smtpd_recipient_restrictions=permit_sasl_authenticated,reject"
   done
   postconf -P 'submission/inet/smtpd_tls_security_level=encrypt' 'submissions/inet/smtpd_tls_wrappermode=yes'
