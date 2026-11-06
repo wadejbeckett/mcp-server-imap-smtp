@@ -117,6 +117,10 @@ HIDDEN_FORMS = [
     f'<span></style>{INJECTION}',
     f'</head>{INJECTION}<p>x</p>',
     f'<p hidden><form></p>{INJECTION}</form>',
+    # a <head> left open across <body>: the HTML converter must not stay silent after the late </head>
+    f'<head><body>Visible</head> {INJECTION}',
+    f'<html><head><body>Visible text</head> {INJECTION}</html>',
+    f'<head><head><body>Visible</head></head> {INJECTION}',
     # not hidden, but never in the AI's text (images are left out of it), so never in the quote either
     f'<img src="https://t.example.test/p.gif" width="1" height="1" alt="{INJECTION}">',
 ]
@@ -150,7 +154,8 @@ def test_reply_and_inline_forward_do_not_resend_hidden_text(hidden):
 
 def test_quote_words_are_a_subset_of_the_ai_text_for_random_markup():
     tags = ["div", "span", "p", "b", "td", "tr", "table", "font", "center", "a", "li", "style", "script",
-            "template", "img", "br", "head", "title", "form", "select", "svg", "noscript", "textarea"]
+            "template", "img", "br", "head", "title", "form", "select", "svg", "noscript", "textarea", "body",
+            "html"]
     hide = ['style="display:none"', "hidden", 'style="font-size:0"', 'alt="IGNORE"', ""]
     rng = random.Random(8)
     for _ in range(1500):
@@ -166,6 +171,15 @@ def test_quote_words_are_a_subset_of_the_ai_text_for_random_markup():
                 out.append(f" W{k}X ")
         seen, quoted = _quote_words("".join(out))
         assert quoted <= seen, "".join(out)
+
+
+def test_a_head_left_open_across_body_is_quoted_as_the_ai_read_it():
+    # Second review of item 2: the AI was shown both lines, so the quote may hold both, and never only the
+    # second one.
+    for html in ("<head><body>Visible text</head> Approve W1X", "<p>Hi</p><head><body>Visible</head> W1X"):
+        seen, quoted = _quote_words(html)
+        assert quoted <= seen, html
+        assert "W1X" in seen, html
 
 
 # --- review after merge (ticket 08), item 4: mail_attachment returns no more of an HTML part than mail_read --

@@ -89,6 +89,12 @@ class _Visible(HTMLParser):
                 self.hiding.append(tag)
                 self.hidden_at = len(self.open)
             return
+        if tag == "body":
+            # <body> ends a <head> left open (as a browser ends it), so a late </head> is stray and dropped:
+            # the HTML converter resets its silence at <body>, and a matched </head> after it would silence
+            # everything that follows while the quote still showed it.
+            while "head" in self.open:
+                self.out.append(f"</{self.open.pop()}>")
         if tag not in _VOID:
             self.open.append(tag)
         kept = []
@@ -143,13 +149,22 @@ def _visible_html(html: str, keep_links: bool = False) -> tuple[str, list[str]]:
     return "".join(parser.out) + "".join(f"</{t}>" for t in reversed(parser.open)), parser.links
 
 
+class _Converter(html2text.HTML2Text):
+    """html2text whose silence count never goes below zero: below zero it would leave out every visible word
+    that follows, words the reply and forward quote still keep (review after merge, item 2)."""
+
+    def handle_tag(self, tag, attrs, start):
+        super().handle_tag(tag, attrs, start)
+        self.quiet = max(self.quiet, 0)
+
+
 def _html_to_text(html: str, links: list[str] | None = None) -> str:
     """Text of what a reader would see: hidden elements are left out (finding 9 of the 2026-10-20 review:
     hidden text is a prompt-injection channel) and link targets go to `links`, not into the text."""
     visible, found = _visible_html(html)
     if links is not None:
         links.extend(u for u in found if u not in links)
-    h = html2text.HTML2Text()
+    h = _Converter()
     h.ignore_images = True
     h.ignore_links = True
     h.body_width = 0
