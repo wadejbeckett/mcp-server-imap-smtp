@@ -91,3 +91,76 @@ def test_self_closed_hidden_div_in_a_cell_ends_with_the_cell():
 def test_self_closed_visible_and_void_tags_hide_nothing():
     s = render.summarise(eml(html='<p>One<br/>Two<img src="x" style="display:none"/>Three<span/>Four</p>'))
     assert all(w in s["text"] for w in ("One", "Two", "Three", "Four"))
+
+
+# --- review after merge (ticket 08), item 2: a quote never carries text the AI was not shown -------------
+
+import random
+import re
+
+from mcp_server_imap_smtp.mail import compose
+
+HIDDEN_FORMS = [
+    f'<div style="display:none">{INJECTION}</div>',
+    f'<span style="visibility:hidden">{INJECTION}</span>',
+    f'<p style="font-size:0">{INJECTION}</p>',
+    f'<p style="opacity:0">{INJECTION}</p>',
+    f'<div hidden>{INJECTION}</div>',
+    f'<p style="color:#ffffff;background-color:#FFF">{INJECTION}</p>',
+    f'<template>{INJECTION}</template>',
+    # mis-nested and unclosed
+    f'<div><span style="display:none">{INJECTION}</div>',
+    f'<font><span style="display:none"></font>{INJECTION}',
+    f'<b><i style="display:none"></b>{INJECTION}</i>',
+    f'<table><tr><td hidden>{INJECTION}<td>v</table>',
+    f'<div style="display:none"/>{INJECTION}',
+    f'<span></style>{INJECTION}',
+    f'</head>{INJECTION}<p>x</p>',
+    f'<p hidden><form></p>{INJECTION}</form>',
+]
+
+
+def _quote_words(html: str) -> tuple[set[str], set[str]]:
+    raw = ("From: a@x.example\r\nSubject: s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+           + html).encode()
+    def words(s):
+        return set(re.findall(r"W\d+X|IGNORE", s))
+    return words(render.summarise(raw)["text"]), words(render.quotable_html(raw))
+
+
+@pytest.mark.parametrize("hidden", HIDDEN_FORMS)
+def test_quote_never_holds_text_the_ai_was_not_shown(hidden):
+    seen, quoted = _quote_words(f"<p>Hi</p>{hidden}<p>Regards</p>")
+    assert quoted <= seen
+
+
+@pytest.mark.parametrize("hidden", HIDDEN_FORMS)
+def test_reply_and_inline_forward_do_not_resend_hidden_text(hidden):
+    raw = eml(html=f"<p>Hi</p>{hidden}<p>Regards</p>")
+    hid = "IGNORE" not in render.summarise(raw)["text"]
+    for m in (compose.reply(raw, "me@x.example", "ok", html="<p>ok</p>"),
+              compose.forward(raw, "me@x.example", ["b@x.example"], "fyi", html="<p>fyi</p>", mode="inline")):
+        bodies = [p.get_content() for p in m.walk() if p.get_content_type() in ("text/plain", "text/html")]
+        assert len(bodies) == 2
+        if hid:
+            assert not any("IGNORE" in b for b in bodies)
+
+
+def test_quote_words_are_a_subset_of_the_ai_text_for_random_markup():
+    tags = ["div", "span", "p", "b", "td", "tr", "table", "font", "center", "a", "li", "style", "script",
+            "template", "img", "br", "head", "title", "form", "select", "svg", "noscript", "textarea"]
+    hide = ['style="display:none"', "hidden", 'style="font-size:0"', ""]
+    rng = random.Random(8)
+    for _ in range(1500):
+        out, k = [], 0
+        for _ in range(rng.randint(3, 14)):
+            r = rng.random()
+            if r < 0.4:
+                out.append(f"<{rng.choice(tags)} {rng.choice(hide)}>")
+            elif r < 0.7:
+                out.append(f"</{rng.choice(tags)}>")
+            else:
+                k += 1
+                out.append(f" W{k}X ")
+        seen, quoted = _quote_words("".join(out))
+        assert quoted <= seen, "".join(out)

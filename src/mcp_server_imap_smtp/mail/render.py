@@ -59,10 +59,14 @@ def _colour(value: str) -> str:
 
 
 class _Visible(HTMLParser):
-    """Re-emits the HTML without hidden elements, comments and link targets; link targets are collected."""
+    """Re-emits the HTML without hidden elements, comments and link targets; link targets are collected.
+    keep_links=True keeps a link's http, https or mailto target on its <a> (for a quote, D9), still listing
+    it. An end tag is emitted only for an element it opened, so a stray </style> cannot make the HTML
+    converter drop the text after it."""
 
-    def __init__(self):
+    def __init__(self, keep_links: bool = False):
         super().__init__(convert_charrefs=True)
+        self.keep_links = keep_links
         self.out: list[str] = []
         self.links: list[str] = []
         self.hiding: list[str] = []     # open tags inside the outermost hidden element
@@ -86,9 +90,11 @@ class _Visible(HTMLParser):
         for k, v in attrs:
             if tag == "a" and k == "href":
                 target = (v or "").strip()
-                if target.lower().startswith(("http://", "https://", "mailto:")) and target not in self.links \
-                        and len(self.links) < MAX_LINKS:
+                web = target.lower().startswith(("http://", "https://", "mailto:"))
+                if web and target not in self.links and len(self.links) < MAX_LINKS:
                     self.links.append(target)
+                if web and self.keep_links:
+                    kept.append(f' href="{html_lib.escape(target)}"')
                 continue
             kept.append(f' {k}="{html_lib.escape(v or "")}"')
         self.out.append(f"<{tag}{''.join(kept)}>")
@@ -110,20 +116,22 @@ class _Visible(HTMLParser):
             # markup), so hiding stops here rather than swallowing the rest of the message.
             self.hiding.clear()
         if tag in self.open:
-            while self.open.pop() != tag:
-                pass
-        self.out.append(f"</{tag}>")
+            while True:
+                t = self.open.pop()
+                self.out.append(f"</{t}>")
+                if t == tag:
+                    break
 
     def handle_data(self, data):
         if not self.hiding:
             self.out.append(html_lib.escape(data, quote=False))
 
 
-def _visible_html(html: str) -> tuple[str, list[str]]:
-    parser = _Visible()
+def _visible_html(html: str, keep_links: bool = False) -> tuple[str, list[str]]:
+    parser = _Visible(keep_links)
     parser.feed(html)
     parser.close()
-    return "".join(parser.out), parser.links
+    return "".join(parser.out) + "".join(f"</{t}>" for t in reversed(parser.open)), parser.links
 
 
 def _html_to_text(html: str, links: list[str] | None = None) -> str:
@@ -482,8 +490,9 @@ def find_part(raw: bytes, index: int | None = None, part: str | None = None,
 
 # Quoting an original in an outgoing reply or inline forward (D9). Only plain formatting survives: no scripts,
 # styles, forms, images (a remote image would be fetched by every reader, a cid: image would point at nothing)
-# or attributes other than a link's http, https or mailto target. Hidden elements are left out, as they are
-# from what the AI reads, so the quote shows the reader what the AI saw.
+# or attributes other than a link's http, https or mailto target. It runs over the output of the same
+# visibility pass that makes the AI's text (_Visible), so hidden elements are gone before it starts and the
+# quote shows the reader no more than the AI saw (review after merge, item 2).
 _QUOTE_TAGS = frozenset("a b blockquote br code div em h1 h2 h3 h4 h5 h6 hr i li ol p pre s small span strong "
                         "sub sup table tbody td tfoot th thead tr u ul".split())
 _QUOTE_DROP = frozenset("script style head title template object embed iframe svg math noscript select "
@@ -572,8 +581,11 @@ def quotable_html(raw: bytes, body_cap: int = 50_000) -> str:
             source = html.get_content()
         except (LookupError, UnicodeDecodeError):
             source = (html.get_payload(decode=True) or b"").decode("utf-8", "replace")
+        # The quote is cut from the visible pass's own output, the HTML summarise() turned into the AI's text,
+        # so nothing it left out (hidden elements, however mis-nested) can come back in the quote.
+        visible, _ = _visible_html(source, keep_links=True)
         q = _Quotable()
-        q.feed(source)
+        q.feed(visible)
         q.close()
         quoted = q.result()
         if quoted.strip():
