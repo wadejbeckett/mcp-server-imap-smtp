@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
+from mcp_server_imap_smtp.app import STOP_SECONDS
 from tests._stop_server import ADDRESS, PASSWORD
 
 SERVER = Path(__file__).with_name("_stop_server.py")
@@ -93,10 +94,10 @@ class Gateway:
                           json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                                 "params": {"name": tool, "arguments": arguments}}, timeout=60)
 
-    def stop(self) -> tuple[int, float]:
-        """SIGTERM; (exit status, seconds until the process had gone)."""
+    def stop(self, sig: int = signal.SIGTERM) -> tuple[int, float]:
+        """SIGTERM (or `sig`); (exit status, seconds until the process had gone)."""
         started = time.monotonic()
-        self.proc.send_signal(signal.SIGTERM)
+        self.proc.send_signal(sig)
         try:
             status = self.proc.wait(timeout=60)
         finally:
@@ -130,9 +131,23 @@ def assert_stopped_cleanly(gateway, status, took):
     assert took < STOP_WITHIN, (took, gateway.output())
 
 
+def assert_stopped_without_the_backstop(gateway, status, took):
+    """Stopped by the stop path itself, not by the last-resort exit at STOP_SECONDS (which also exits 0)."""
+    assert_stopped_cleanly(gateway, status, took)
+    assert "stopping took longer than" not in gateway.output(), gateway.output()
+    assert took < STOP_SECONDS - 1, (took, gateway.output())
+
+
 def test_stops_at_once_when_idle(gateway):
     status, took = gateway.stop()
-    assert_stopped_cleanly(gateway, status, took)
+    assert_stopped_without_the_backstop(gateway, status, took)
+
+
+def test_ctrl_c_in_a_foreground_run_stops_quietly(gateway):
+    """Ctrl+C (SIGINT) ends a foreground run with status 0 and no traceback, as uvicorn.run does."""
+    status, took = gateway.stop(signal.SIGINT)
+    assert status == 0, (status, gateway.output())
+    assert took < STOP_WITHIN and "Traceback" not in gateway.output(), gateway.output()
 
 
 def test_stops_with_an_open_stream(gateway):
@@ -155,7 +170,7 @@ def test_stops_with_an_open_stream(gateway):
     reader.start()
     assert opened.wait(10)
     status, took = gateway.stop()
-    assert_stopped_cleanly(gateway, status, took)
+    assert_stopped_without_the_backstop(gateway, status, took)
 
 
 def test_stops_with_a_tool_call_waiting_on_a_silent_mail_server(gateway):
@@ -166,7 +181,7 @@ def test_stops_with_a_tool_call_waiting_on_a_silent_mail_server(gateway):
     caller.start()
     gateway.wait_for("blocked")
     status, took = gateway.stop()
-    assert_stopped_cleanly(gateway, status, took)
+    assert_stopped_without_the_backstop(gateway, status, took)
     caller.join(10)
 
 
@@ -183,7 +198,7 @@ def test_kept_sessions_are_logged_out_on_stop(gateway):
     assert r.status_code == 200 and '"isError":false' in r.text.replace(" ", ""), r.text
     assert gateway.events() == []          # the session is kept for the next call, not logged out
     status, took = gateway.stop()
-    assert_stopped_cleanly(gateway, status, took)
+    assert_stopped_without_the_backstop(gateway, status, took)
     assert gateway.events() == ["logout"]
 
 
@@ -193,9 +208,9 @@ def test_a_call_in_flight_gets_a_short_grace_to_finish(gateway):
     answers = []
     caller = threading.Thread(target=lambda: answers.append(_answer(gateway, token)), daemon=True)
     caller.start()
-    time.sleep(0.3)          # the call is under way (it takes a second)
+    gateway.wait_for("started")          # the call is under way (it takes a second)
     status, took = gateway.stop()
-    assert_stopped_cleanly(gateway, status, took)
+    assert_stopped_without_the_backstop(gateway, status, took)
     caller.join(10)
     assert isinstance(answers[0], httpx.Response) and '"isError":false' in answers[0].text.replace(" ", "")
 

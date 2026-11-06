@@ -5,7 +5,7 @@ server, for tests/test_shutdown.py: python tests/_stop_server.py DIR PORT.
 The fake IMAP session's commands answer at once, unless a file in DIR says otherwise: "block", a socket read
 on a listener that never answers (a silent mail server) that the session can interrupt as ImapClient does;
 "stuck", the same read on a socket the session does not hold (work nothing can interrupt, such as an SMTP
-exchange); "slow", a one-second wait. Events ("blocked", "logout") are written as lines to DIR/events, so a
+exchange); "slow", a one-second wait. Events ("started", "blocked", "logout") are written as lines to DIR/events, so a
 test can follow the session after the process has gone."""
 import socket
 import sys
@@ -70,6 +70,8 @@ class FakeSession:
 
     def folders(self):
         if (self.folder / "slow").exists():
+            with open(self.folder / "events", "a") as f:
+                f.write("started\n")
             time.sleep(1)
         for mode in ("block", "stuck"):
             if (self.folder / mode).exists():

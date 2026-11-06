@@ -165,6 +165,9 @@ def _exit_after(seconds: float) -> None:
 def serve(app: ASGIApp, settings: Settings) -> None:
     """uvicorn.run(app, **uvicorn_kwargs(settings)), with the stop bound above."""
     server = _Server(uvicorn.Config(app, **uvicorn_kwargs(settings)))
-    server.run()
+    try:
+        server.run()
+    except KeyboardInterrupt:            # uvicorn raises Ctrl+C again once it has stopped; as uvicorn.run does
+        pass
     if not server.started:
         sys.exit(STARTUP_FAILURE)        # as uvicorn.run does
