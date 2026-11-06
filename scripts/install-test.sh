@@ -88,6 +88,8 @@ on_exit() {
     local rc=$?
     if [[ ${KEEP:-0} == 1 ]]; then
         printf '\nKEEP=1: VM and %s left running. ssh -F %s/ssh_config vm; %s down to remove.\n' "$CONTAINER" "$W" "$0"
+        # keep_logs does not run here, so last-failure/ is absent or an older run's: name this run's own logs.
+        (( rc == 0 )) || printf '\n[install-test] The logs of this run (console.log, *.build.log, install.N.log) are in %s\n' "$W" >&2
     else
         (( rc == 0 )) || keep_logs
         down
@@ -196,10 +198,10 @@ Host vm
 EOF
     local start=$SECONDS
     until vm true 2>/dev/null; do
-        (( SECONDS - start < 300 )) || die "VM did not accept SSH within 300 s (see console.log in $BASE_DIR/last-failure)"
+        (( SECONDS - start < 300 )) || die "VM did not accept SSH within 300 s (see console.log)"
         sleep 3
     done
-    vm cloud-init status --wait >/dev/null || die "cloud-init failed in the VM (see console.log in $BASE_DIR/last-failure)"
+    vm cloud-init status --wait >/dev/null || die "cloud-init failed in the VM (see console.log)"
     log "VM up in $((SECONDS - start)) s"
 }
 

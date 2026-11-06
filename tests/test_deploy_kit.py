@@ -279,7 +279,7 @@ def _install_test_function(name: str) -> str:
     return text[start:text.index("\n}\n", start) + 3]
 
 
-def _run_install_test_exit(tmp_path, rc: int) -> subprocess.CompletedProcess:
+def _run_install_test_exit(tmp_path, rc: int, keep: str = "0") -> subprocess.CompletedProcess:
     """Runs the script's EXIT handling on a work directory holding a run's logs, with docker stubbed out."""
     base, w = tmp_path / "base", tmp_path / "base" / "run"
     w.mkdir(parents=True)
@@ -289,7 +289,8 @@ def _run_install_test_exit(tmp_path, rc: int) -> subprocess.CompletedProcess:
     script = ("docker() { :; }\n" + "".join(_install_test_function(f) for f in ("down", "keep_logs", "on_exit"))
               + f"trap on_exit EXIT\nexit {rc}\n")
     return subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                          env={"PATH": "/usr/bin:/bin", "W": str(w), "BASE_DIR": str(base), "CONTAINER": "none"})
+                          env={"PATH": "/usr/bin:/bin", "W": str(w), "BASE_DIR": str(base), "CONTAINER": "none",
+                               "KEEP": keep})
 
 
 def test_install_test_keeps_the_logs_of_a_failed_run(tmp_path):
@@ -305,3 +306,16 @@ def test_install_test_keeps_nothing_after_a_passing_run(tmp_path):
     r = _run_install_test_exit(tmp_path, 0)
     assert r.returncode == 0
     assert not (tmp_path / "base" / "run").exists() and not (tmp_path / "base" / "last-failure").exists()
+
+
+def test_install_test_kept_failed_run_points_at_its_own_logs(tmp_path):
+    """With KEEP=1 (and 'up') nothing is copied to last-failure/, which may hold an older run's logs, so a failed
+    kept run must name its own work directory, and the boot errors must not name last-failure/ themselves."""
+    (tmp_path / "base" / "last-failure").mkdir(parents=True)
+    r = _run_install_test_exit(tmp_path, 1, keep="1")
+    w = tmp_path / "base" / "run"
+    assert r.returncode == 1
+    assert (w / "console.log").exists()
+    assert "logs of this run" in r.stderr and str(w) in r.stderr
+    assert "last-failure" not in r.stderr
+    assert "console.log in $BASE_DIR/last-failure" not in (SCRIPTS / "install-test.sh").read_text()
