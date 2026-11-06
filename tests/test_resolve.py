@@ -89,7 +89,7 @@ def test_any_of_several_mx_hosts_matches():
     assert r.resolve("me@client.co.za")[1] is MAIL1
 
 
-@pytest.mark.parametrize("mx_hosts", [["aspmx.l.google.com."], ["evilneo.hosting.example."], ["mail1.hosting.example.evil.com."],
+@pytest.mark.parametrize("mx_hosts", [["aspmx.l.google.com."], ["evilmail1.hosting.example."], ["mail1.hosting.example.evil.com."],
                                       ["hosting.example."], ["."]])
 def test_mx_elsewhere_refused(mx_hosts):
     r, _ = make(table={"client.co.za": mx_hosts})
@@ -192,31 +192,31 @@ def test_unicode_dot_fullwidth_case_and_trailing_dot_collapse(variant):
 
 # MX by address: Plesk publishes MX mail.<domain>, whose A/AAAA is the server's address.
 
-NEO_IPS = ["160.119.0.10", "2c0f:0:0:0::10"]
+HOST_IPS = ["160.119.0.10", "2c0f:0:0:0::10"]
 
 
 def test_mx_matches_by_address_when_the_name_does_not():
     r, mx = make(table={"shop.example": ["mail.shop.example."]},
-                 addrs={"mail.shop.example": ["160.119.0.10"], "mail1.hosting.example": NEO_IPS})
+                 addrs={"mail.shop.example": ["160.119.0.10"], "mail1.hosting.example": HOST_IPS})
     assert r.resolve("me@shop.example") == ("me@shop.example", MAIL1)
     assert r._addr_lookup.calls == ["mail.shop.example", "mail1.hosting.example"]
 
 
 def test_mx_address_match_on_ipv6_in_any_spelling():
     r, _ = make(table={"c.co.za": ["mail.c.co.za."]},
-                addrs={"mail.c.co.za": ["2c0f::10"], "mail1.hosting.example": NEO_IPS})
+                addrs={"mail.c.co.za": ["2c0f::10"], "mail1.hosting.example": HOST_IPS})
     assert r.resolve("me@c.co.za")[1] is MAIL1
 
 
 def test_name_match_is_tried_before_any_address_lookup():
-    r, _ = make(table={"c.co.za": ["mail.c.co.za.", "mail1.hosting.example."]}, addrs={"mail.c.co.za": NEO_IPS})
+    r, _ = make(table={"c.co.za": ["mail.c.co.za.", "mail1.hosting.example."]}, addrs={"mail.c.co.za": HOST_IPS})
     assert r.resolve("me@c.co.za")[1] is MAIL1
     assert r._addr_lookup.calls == []
 
 
 def test_mx_address_elsewhere_refused():
     r, _ = make(table={"c.co.za": ["mail.c.co.za."]},
-                addrs={"mail.c.co.za": ["192.0.2.1"], "mail1.hosting.example": NEO_IPS})
+                addrs={"mail.c.co.za": ["192.0.2.1"], "mail1.hosting.example": HOST_IPS})
     with pytest.raises(HostNotAllowed):
         r.resolve("me@c.co.za")
 
@@ -233,7 +233,7 @@ def test_mx_address_match_only_for_match_mx_servers_and_config_order_breaks_ties
 
 def test_at_most_five_mx_hosts_are_looked_up():
     hosts = [f"mx{i}.c.co.za." for i in range(8)]
-    r, _ = make(table={"c.co.za": hosts}, addrs={"mx6.c.co.za": NEO_IPS, "mail1.hosting.example": NEO_IPS})
+    r, _ = make(table={"c.co.za": hosts}, addrs={"mx6.c.co.za": HOST_IPS, "mail1.hosting.example": HOST_IPS})
     with pytest.raises(HostNotAllowed):
         r.resolve("me@c.co.za")
     assert r._addr_lookup.calls == [f"mx{i}.c.co.za" for i in range(5)]
@@ -247,13 +247,13 @@ def test_no_server_lookup_when_mx_hosts_have_no_address():
 
 
 def test_address_lookup_failure_is_unavailable_unless_another_host_matches():
-    r, _ = make(table={"c.co.za": ["mx1.c.co.za.", "mx2.c.co.za."]}, addrs={"mx2.c.co.za": NEO_IPS,
-                "mail1.hosting.example": NEO_IPS}, addr_fail={"mx1.c.co.za"})
+    r, _ = make(table={"c.co.za": ["mx1.c.co.za.", "mx2.c.co.za."]}, addrs={"mx2.c.co.za": HOST_IPS,
+                "mail1.hosting.example": HOST_IPS}, addr_fail={"mx1.c.co.za"})
     assert r.resolve("me@c.co.za")[1] is MAIL1
     r, _ = make(table={"c.co.za": ["mx1.c.co.za."]}, addr_fail={"mx1.c.co.za"})
     with pytest.raises(ResolveUnavailable):
         r.resolve("me@c.co.za")
-    r, _ = make(table={"c.co.za": ["mail.c.co.za."]}, addrs={"mail.c.co.za": NEO_IPS}, addr_fail={"mail1.hosting.example"})
+    r, _ = make(table={"c.co.za": ["mail.c.co.za."]}, addrs={"mail.c.co.za": HOST_IPS}, addr_fail={"mail1.hosting.example"})
     with pytest.raises(ResolveUnavailable):
         r.resolve("me@c.co.za")
 
@@ -261,7 +261,7 @@ def test_address_lookup_failure_is_unavailable_unless_another_host_matches():
 def test_address_answers_are_cached_by_name_and_failures_for_30s():
     now = [0.0]
     r, _ = make(table={"a.co.za": ["mail.a.co.za."], "b.co.za": ["mail.b.co.za."]},
-                addrs={"mail.a.co.za": NEO_IPS, "mail.b.co.za": NEO_IPS, "mail1.hosting.example": NEO_IPS},
+                addrs={"mail.a.co.za": HOST_IPS, "mail.b.co.za": HOST_IPS, "mail1.hosting.example": HOST_IPS},
                 clock=lambda: now[0])
     assert r.resolve("x@a.co.za")[1] is MAIL1 and r.resolve("y@b.co.za")[1] is MAIL1 and r.resolve("z@a.co.za")[1] is MAIL1
     assert r._addr_lookup.calls == ["mail.a.co.za", "mail1.hosting.example", "mail.b.co.za"]   # mail1 looked up once

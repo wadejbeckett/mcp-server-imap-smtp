@@ -67,7 +67,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Support this project
 
-hosted-mcp is free software from Noiz. If it is useful to you, the main way to support its development is a donation in Monero (XMR):
+mcp-server-imap-smtp is free software from Noiz. If it is useful to you, the main way to support its development is a donation in Monero (XMR):
 
 ```text
 44BtMn9izxH8mK2yFbSdY6Di7TNobkLbnHdZ6gZQjukCME5vsNhtPRtH4TcVkDHKHLhSpAJbsjv8gCdYuSZVMpXgMkUC1hV
@@ -82,11 +82,3 @@ Copyright the mcp-server-imap-smtp contributors.
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. See [LICENSE](LICENSE).
 
 The AGPL applies to network use. If you run a modified version for users over a network, you must offer those users the source code of your version.
-
-## Support the project
-
-If the connector is useful to you, a donation helps keep it maintained. Monero is preferred:
-
-```
-MONERO ADDRESS: <placeholder: the maintainer adds the address before publication>
-```
