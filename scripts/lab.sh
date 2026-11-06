@@ -70,9 +70,12 @@ up() {
 }
 
 down() {
+  # A plain assignment, so a failing docker stops the script under set -e; no mapfile, which bash 3.2 lacks.
   local ids
-  mapfile -t ids < <(docker ps -aq --filter label=mcp-imap-smtp-lab=1)
-  if [ "${#ids[@]}" -gt 0 ]; then docker rm -f "${ids[@]}" >/dev/null; fi
+  ids="$(docker ps -aq --filter label=mcp-imap-smtp-lab=1)"
+  # Container ids are hex, one per line: word splitting is how they become separate arguments.
+  # shellcheck disable=SC2086
+  if [ -n "$ids" ]; then docker rm -f $ids >/dev/null; fi
   echo "lab stopped"
 }
 
