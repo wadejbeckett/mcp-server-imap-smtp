@@ -456,6 +456,10 @@ class Part:
     def data(self) -> bytes:
         return _get_attachment_data(self.part)
 
+    def size(self) -> int:
+        """The decoded size, worked out without decoding where the encoding allows (_size)."""
+        return _size(self.part)
+
 
 def attachment_parts(raw: bytes) -> list[Part]:
     """Every part summarise() lists as an attachment, from one parse of the message."""
@@ -467,12 +471,17 @@ def attachment_parts(raw: bytes) -> list[Part]:
 _PART_ID = re.compile(r"[1-9]\d{0,3}(\.[1-9]\d{0,3}){0,19}")
 
 
-def find_part(raw: bytes, index: int | None = None, part: str | None = None,
+def parse(raw: bytes) -> EmailMessage:
+    """A stored message parsed once, for several find_part calls."""
+    return _parse(raw)
+
+
+def find_part(raw: bytes | EmailMessage, index: int | None = None, part: str | None = None,
               content_id: str | None = None) -> Part:
-    """One part of a message by exactly one of: its position in summarise()["attachments"], its IMAP section
-    number (any part that is not a multipart, the body included) or its Content-ID. Raises LookupError with
-    a message for the AI when there is no such part."""
-    msg = _parse(raw)
+    """One part of a message (its bytes, or the message from parse()) by exactly one of: its position in
+    summarise()["attachments"], its IMAP section number (any part that is not a multipart, the body included)
+    or its Content-ID. Raises LookupError with a message for the AI when there is no such part."""
+    msg = raw if isinstance(raw, EmailMessage) else _parse(raw)
     if index is not None:
         parts = _attachments(msg)
         if not 0 <= index < len(parts):

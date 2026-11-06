@@ -851,3 +851,87 @@ async def test_a_send_refused_before_mail_from_gives_its_budget_slot_back(env, m
         with pytest.raises(ToolError, match="sending limit"):
             await srv.call_tool("mail_send", DRAFT)
         assert sent == []
+
+
+# --- item 1: repeated references are counted before anything is decoded ----------------------------------
+
+BIG = bytes(range(256)) * 1600          # 400 KB
+
+
+@pytest.fixture
+def decodes(monkeypatch):
+    """Counts render.Part.data calls: each one decodes a part into a new copy."""
+    calls = []
+    real = render.Part.data
+    monkeypatch.setattr(render.Part, "data", lambda self: calls.append(self.part_id) or real(self))
+    return calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool", ["mail_draft", "mail_send"])
+async def test_many_references_to_one_part_are_refused_before_decoding(env, monkeypatch, decodes, tool):
+    monkeypatch.setattr(tools_mod, "ATTACH_BYTES", 1_000_000)
+    sender = FakeSender()
+    srv, fake = build(env, FakeImap({("INBOX", 5): raw_message(attachments=[("big.bin", "application/octet-stream",
+                                                                              BIG)])}), sender)
+    with pytest.raises(ToolError, match="add up to more than 1 MB"):
+        await srv.call_tool(tool, {**DRAFT, "attachments": [
+            {"source_folder": "INBOX", "source_uid": 5, "source_part": "2"}] * 3})
+    assert decodes == [] and fake.named("append") == [] and sender.sent == []
+
+
+@pytest.mark.anyio
+async def test_whole_message_references_count_each_time(env, monkeypatch):
+    monkeypatch.setattr(tools_mod, "ATTACH_BYTES", 1_000_000)
+    srv, fake = build(env, FakeImap({("INBOX", 5): raw_message(body="x" * 400_000)}))
+    with pytest.raises(ToolError, match="add up to more than"):
+        await srv.call_tool("mail_draft", {**DRAFT, "attachments": [{"source_folder": "INBOX", "source_uid": 5}] * 3})
+    assert fake.named("append") == [] and len(fake.named("fetch_raw")) == 1
+
+
+@pytest.mark.anyio
+async def test_base64_and_references_count_together_before_decoding(env, monkeypatch, decodes):
+    monkeypatch.setattr(tools_mod, "ATTACH_BYTES", 1_000_000)
+    srv, fake = build(env, FakeImap({("INBOX", 5): raw_message(attachments=[("big.bin", "application/octet-stream",
+                                                                              BIG)])}))
+    with pytest.raises(ToolError, match="add up to more than"):
+        await srv.call_tool("mail_draft", {**DRAFT, "attachments": [
+            {"filename": "a.bin", "base64": b64(BIG)}, {"filename": "b.bin", "base64": b64(BIG)},
+            {"source_folder": "INBOX", "source_uid": 5, "source_part": "2"}]})
+    assert decodes == [] and fake.named("append") == []
+
+
+@pytest.mark.anyio
+async def test_base64_alone_is_refused_before_any_mail_server_call(env, monkeypatch):
+    monkeypatch.setattr(tools_mod, "ATTACH_BYTES", 1000)
+    srv, fake = build(env)
+    with pytest.raises(ToolError, match="add up to more than"):
+        await srv.call_tool("mail_draft", {**DRAFT, "attachments": [{"filename": "a", "base64": b64(b"x" * 600)}] * 2})
+    assert fake.calls == []
+
+
+@pytest.mark.anyio
+async def test_references_under_the_cap_share_one_decoded_copy(env, decodes):
+    srv, fake = build(env, FakeImap({("INBOX", 5): raw_message(attachments=[("big.bin", "application/octet-stream",
+                                                                              BIG)])}))
+    await srv.call_tool("mail_draft", {**DRAFT, "attachments": [
+        {"source_folder": "INBOX", "source_uid": 5, "source_part": "2"}] * 3})
+    assert decodes == ["2"]
+    assert [p.get_content() for p in appended(fake).iter_attachments()] == [BIG] * 3
+
+
+@pytest.mark.anyio
+async def test_a_hundred_references_to_a_large_part_allocate_no_copies(env):
+    import tracemalloc
+    big = bytes(range(256)) * 4096 * 3        # 3 MB: 100 copies would be 300 MB
+    srv, fake = build(env, FakeImap({("INBOX", 5): raw_message(attachments=[("big.bin", "application/octet-stream",
+                                                                              big)])}))
+    tracemalloc.start()
+    try:
+        with pytest.raises(ToolError, match="add up to more than 50 MB"):
+            await srv.call_tool("mail_send", {**DRAFT, "attachments": [
+                {"source_folder": "INBOX", "source_uid": 5, "source_part": "2"}] * 100})
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 40_000_000

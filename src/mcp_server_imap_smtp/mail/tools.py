@@ -11,11 +11,13 @@ import functools
 import imaplib
 import inspect
 import logging
+import re
 import shutil
 import ssl
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from datetime import date
 from email.utils import getaddresses, parsedate_to_datetime
 from typing import Annotated, Any, Callable, Literal
@@ -137,9 +139,21 @@ def _check_attachments(items: list[Attachment] | None) -> list[Attachment]:
     return items
 
 
+_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
+
+
+def _base64_text(n: int, a: Attachment) -> str:
+    """The attachment's base64 without whitespace, checked as b64decode(validate=True) would check it but
+    without decoding it; raises ToolError."""
+    text = "".join(a.base64.split())
+    if not _BASE64.fullmatch(text):
+        raise ToolError(f"attachment {n} ({a.filename}): base64 is not valid")
+    return text
+
+
 def _decoded(n: int, a: Attachment) -> compose.File:
     try:
-        data = b64.b64decode("".join(a.base64.split()), validate=True)
+        data = b64.b64decode(_base64_text(n, a), validate=True)
     except (binascii.Error, ValueError):
         raise ToolError(f"attachment {n} ({a.filename}): base64 is not valid") from None
     try:
@@ -151,19 +165,33 @@ def _decoded(n: int, a: Attachment) -> compose.File:
 HTML_PART_NOTE = ("HTML converted to text as mail_read does: hidden text was left out and link targets are in "
                   "`links`.")
 SOURCE_BYTES = 50_000_000     # stored messages one call may read for source_* references (guards memory only)
+# Decoded bytes one message may carry in attachments, every reference counted each time it is given and
+# counted before anything is decoded (review after merge, item 1): a few-KB call naming one large part a
+# hundred times would otherwise build a message of a hundred copies. A guard on the process, not a send
+# limit: the message is still held to the server's SIZE and APPENDLIMIT.
+ATTACH_BYTES = 50_000_000
 
 
 class _Fetched:
-    """Source messages read during one call: each (mailbox, folder, uid) once, and no more than SOURCE_BYTES
-    in all, so 100 references cannot download 100 large messages. A guard on the process, not a send limit:
-    the message that results is still held to the mail server's own SIZE and APPENDLIMIT."""
+    """Source messages read during one call: each (mailbox, folder, uid) fetched and parsed once, and no more
+    than SOURCE_BYTES fetched in all, so 100 references cannot download 100 large messages. It also counts
+    the decoded bytes the message will carry (count) and keeps one decoded copy per part, however often it
+    is named."""
 
     def __init__(self):
         self.raw: dict[tuple[str, str, int], bytes] = {}
         self.total = 0
+        self.attached = 0
+        self.parsed: dict[tuple[str, str, int], Any] = {}
+        self.sizes: dict[tuple, int] = {}
+        self.decoded: dict[tuple, bytes] = {}
+
+    @staticmethod
+    def key(c, a: "Attachment") -> tuple[str, str, int]:
+        return (c.address if hasattr(c, "address") else "", a.source_folder, a.source_uid)
 
     def get(self, c, a: "Attachment") -> bytes:
-        key = (c.address if hasattr(c, "address") else "", a.source_folder, a.source_uid)
+        key = self.key(c, a)
         if key not in self.raw:
             raw = c.fetch_raw(a.source_folder, a.source_uid)
             self.total += len(raw)
@@ -173,19 +201,54 @@ class _Fetched:
             self.raw[key] = raw
         return self.raw[key]
 
+    def count(self, size: int) -> None:
+        """Count one attachment's decoded bytes; raises MailError past ATTACH_BYTES."""
+        self.attached += size
+        if self.attached > ATTACH_BYTES:
+            raise MailError(f"the attachments add up to more than {ATTACH_BYTES // 1_000_000} MB (a part named "
+                            "more than once counts each time); attach fewer or smaller files")
 
-def _from_source(c, a: Attachment, fetched: "_Fetched | None" = None) -> compose.File:
-    """The part a source reference names, read from the session c of the mailbox that holds it."""
-    raw = (fetched or _Fetched()).get(c, a)
+
+@dataclass
+class _Ref:
+    """A source reference located and counted, not yet decoded."""
+    a: Attachment
+    key: tuple[str, str, int]
+    part: render.Part | None      # None: the whole message
+
+
+def _plan(c, a: Attachment, fetched: _Fetched) -> _Ref:
+    """Read (once) the message a reference names, find the part and count its size; decodes nothing."""
+    raw = fetched.get(c, a)
+    key = fetched.key(c, a)
     if a.source_part is None:
-        return compose.file(a.filename or f"message-{a.source_uid}.eml", "message/rfc822", raw,
-                            a.disposition, a.content_id)
+        fetched.count(len(raw))
+        return _Ref(a, key, None)
+    if key not in fetched.parsed:
+        fetched.parsed[key] = render.parse(raw)
     try:
-        p = render.find_part(raw, part=a.source_part)
+        p = render.find_part(fetched.parsed[key], part=a.source_part)
     except LookupError as exc:
         raise MailError(f"{a.source_folder} uid {a.source_uid}: {exc}") from None
-    return compose.file(a.filename or p.filename, a.content_type or p.content_type, p.data(), a.disposition,
-                        a.content_id, charset=p.charset)
+    size_key = (key, p.part_id)
+    if size_key not in fetched.sizes:
+        fetched.sizes[size_key] = p.size()
+    fetched.count(fetched.sizes[size_key])
+    return _Ref(a, key, p)
+
+
+def _file(ref: _Ref, fetched: _Fetched) -> compose.File:
+    """The file a counted reference names; a part named several times is decoded once and shared."""
+    a = ref.a
+    if ref.part is None:
+        return compose.file(a.filename or f"message-{a.source_uid}.eml", "message/rfc822", fetched.raw[ref.key],
+                            a.disposition, a.content_id)
+    p = ref.part
+    data_key = (ref.key, p.part_id)
+    if data_key not in fetched.decoded:
+        fetched.decoded[data_key] = p.data()
+    return compose.file(a.filename or p.filename, a.content_type or p.content_type, fetched.decoded[data_key],
+                        a.disposition, a.content_id, charset=p.charset)
 
 
 def _attached(m) -> list[dict[str, Any]]:
@@ -557,26 +620,37 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
         return lease.session(address, lambda: opener(cred.server, address, cred.password))
 
     async def sources(tool_name: str, mailbox: str | None, items: list[Attachment],
-                      fetched: _Fetched) -> dict[int, compose.File]:
-        """The files that need no session on the call's own mailbox: base64 decoded, and the parts named on other
-        mailboxes, each mailbox read in a call of its own (one counted session at a time). {position: file}."""
+                      fetched: _Fetched) -> dict[int, _Ref]:
+        """Everything that needs no session on the call's own mailbox, decoding nothing: base64 checked and
+        counted, and the parts named on other mailboxes located and counted, each mailbox read in a call of
+        its own (one counted session at a time). {position: reference}."""
         _, target, _ = creds(mailbox)
+        for n, a in enumerate(items, 1):
+            if a.base64 is not None:
+                text = _base64_text(n, a)
+                try:
+                    compose.file(a.filename, a.content_type, b"", a.disposition, a.content_id)   # its fields
+                    fetched.count(len(text) * 3 // 4)       # an upper bound: padding is not taken off
+                except MailError as exc:
+                    raise ToolError(str(exc)) from None
         others: dict[str, list[int]] = {}
         for n, a in enumerate(items):
             if a.source_uid is not None and a.source_mailbox and a.source_mailbox.strip().lower() != target:
                 others.setdefault(a.source_mailbox.strip().lower(), []).append(n)
-        found = {n: _decoded(n + 1, a) for n, a in enumerate(items) if a.base64 is not None}  # ToolError here
+        found: dict[int, _Ref] = {}
         for box, positions in others.items():
             def work(addr, cred, positions=positions):
                 with imap(addr, cred) as c:
-                    return {n: _from_source(c, items[n], fetched) for n in positions}
+                    return {n: _plan(c, items[n], fetched) for n in positions}
             found.update(await run(tool_name, box, work, count=len))
         return found
 
-    def files_for(c, items: list[Attachment], ready: dict[int, compose.File], fetched: _Fetched) -> list[compose.File]:
-        """Every attachment in order: those in `ready` (decoded base64, parts read from other mailboxes), the
-        rest (source parts in this mailbox) read on session c."""
-        return [ready[n] if n in ready else _from_source(c, a, fetched) for n, a in enumerate(items)]
+    def files_for(c, items: list[Attachment], planned: dict[int, _Ref], fetched: _Fetched) -> list[compose.File]:
+        """Every attachment in order. The references in this mailbox are located and counted on session c
+        first, so the whole message is within ATTACH_BYTES before anything is decoded."""
+        refs = {n: planned[n] if n in planned else _plan(c, a, fetched)
+                for n, a in enumerate(items) if a.source_uid is not None}
+        return [_decoded(n + 1, a) if a.base64 is not None else _file(refs[n], fetched) for n, a in enumerate(items)]
 
     @tool(READ)
     async def mail_accounts() -> dict[str, Any]:
@@ -858,11 +932,11 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
             _uid(replace_draft_uid)
         items = _check_attachments(attachments)
         fetched = _Fetched()
-        ready = await sources("mail_draft", mailbox, items, fetched)
+        planned = await sources("mail_draft", mailbox, items, fetched)
 
         def work(a, cred):
             with imap(a, cred) as c:
-                files = files_for(c, items, ready, fetched)
+                files = files_for(c, items, planned, fetched)
                 if replying:
                     m = compose.reply(c.fetch_raw(reply_to_folder, reply_to_uid), a, text, html,
                                       fetch=fetch_image, quote=quote, files=files)
@@ -962,12 +1036,12 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
             raise ToolError("a new message needs `to` and `subject`")
         items = _check_attachments(attachments)
         fetched = _Fetched()
-        ready = await sources("mail_send", mailbox, items, fetched)
+        planned = await sources("mail_send", mailbox, items, fetched)
         grant = caller_grant() or "?"
 
         def work(a, cred):
             with imap(a, cred) as c:
-                files = files_for(c, items, ready, fetched)
+                files = files_for(c, items, planned, fetched)
                 if replying:
                     m = compose.reply(c.fetch_raw(reply_to_folder, reply_to_uid), a, text, html, reply_all,
                                       fetch=fetch_image, quote=quote, files=files)
