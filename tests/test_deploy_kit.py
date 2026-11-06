@@ -82,3 +82,159 @@ def test_egress_rules_and_summary_use_every_field_of_a_server_entry():
     assert 'port "$mi,$ms"' in install
     assert 'mail_tls "$mh" "$mi" "$msi" imap' in install and 'mail_tls "$mh" "$ms" "$mss" smtp' in install
     subprocess.run(["bash", "-n", str(DEPLOY / "install.sh")], check=True)
+
+
+# Ticket 76: an operator-supplied certificate (TLS_CERT, TLS_KEY) instead of Let's Encrypt, for a gateway
+# with no public name (a private network, a corporate CA) or a certificate obtained elsewhere.
+
+def _make_cert(d: Path, host: str = "mcp.example.test", *, self_signed: bool = False, expired: bool = False
+               ) -> tuple[Path, Path]:
+    """A CA and a leaf for host signed by it (or a self-signed leaf): returns (fullchain, key), key mode 0600."""
+    import datetime
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    def name(cn: str) -> x509.Name:
+        return x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    start, end = (now - datetime.timedelta(days=60), now - datetime.timedelta(days=1)) if expired else \
+        (now - datetime.timedelta(minutes=5), now + datetime.timedelta(days=30))
+    ca_key, leaf_key = ec.generate_private_key(ec.SECP256R1()), ec.generate_private_key(ec.SECP256R1())
+    ca = (x509.CertificateBuilder().subject_name(name("Test CA")).issuer_name(name("Test CA"))
+          .public_key(ca_key.public_key()).serial_number(x509.random_serial_number())
+          .not_valid_before(now - datetime.timedelta(days=90)).not_valid_after(now + datetime.timedelta(days=90))
+          .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+          .sign(ca_key, hashes.SHA256()))
+    issuer, signer = (name(host), leaf_key) if self_signed else (ca.subject, ca_key)
+    leaf = (x509.CertificateBuilder().subject_name(name(host)).issuer_name(issuer)
+            .public_key(leaf_key.public_key()).serial_number(x509.random_serial_number())
+            .not_valid_before(start).not_valid_after(end)
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(host)]), critical=False)
+            .sign(signer, hashes.SHA256()))
+    d.mkdir(parents=True, exist_ok=True)
+    chain, key = d / "fullchain.pem", d / "privkey.pem"
+    pem = serialization.Encoding.PEM
+    chain.write_bytes(leaf.public_bytes(pem) + (b"" if self_signed else ca.public_bytes(pem)))
+    key.write_bytes(leaf_key.private_bytes(pem, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    key.chmod(0o600)
+    return chain, key
+
+
+def _check_cert(cert: Path | str, key: Path | str, host: str = "mcp.example.test") -> subprocess.CompletedProcess:
+    script = _install_function("safe_path") + _install_function("check_operator_cert")
+    return subprocess.run(["bash", "-c", script + 'check_operator_cert "$1" "$2" "$3"', "-", str(cert), str(key), host],
+                          capture_output=True, text=True)
+
+
+def test_operator_certificate_from_a_ca_is_accepted(tmp_path):
+    cert, key = _make_cert(tmp_path)
+    r = _check_cert(cert, key)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_operator_key_may_be_group_readable_but_not_world_readable(tmp_path):
+    cert, key = _make_cert(tmp_path)
+    key.chmod(0o640)
+    assert _check_cert(cert, key).returncode == 0
+    key.chmod(0o644)
+    r = _check_cert(cert, key)
+    assert r.returncode != 0 and "TLS_KEY" in r.stdout and "644" in r.stdout
+    key.chmod(0o660)
+    assert _check_cert(cert, key).returncode != 0
+
+
+def test_operator_certificate_for_another_name_is_refused(tmp_path):
+    cert, key = _make_cert(tmp_path, host="other.example.test")
+    r = _check_cert(cert, key)
+    assert r.returncode != 0 and "not valid for mcp.example.test" in r.stdout
+
+
+def test_operator_certificate_with_another_key_is_refused(tmp_path):
+    cert, _ = _make_cert(tmp_path / "a")
+    _, other_key = _make_cert(tmp_path / "b")
+    r = _check_cert(cert, other_key)
+    assert r.returncode != 0 and "does not belong" in r.stdout
+
+
+def test_expired_operator_certificate_is_refused(tmp_path):
+    cert, key = _make_cert(tmp_path, expired=True)
+    r = _check_cert(cert, key)
+    assert r.returncode != 0 and "expired" in r.stdout
+
+
+def test_self_signed_operator_certificate_is_refused(tmp_path):
+    """Browsers and AI apps refuse a self-signed certificate, so the kit never serves one."""
+    cert, key = _make_cert(tmp_path, self_signed=True)
+    r = _check_cert(cert, key)
+    assert r.returncode != 0 and "self-signed" in r.stdout
+
+
+def test_operator_certificate_paths_must_be_plain_absolute_paths(tmp_path):
+    cert, key = _make_cert(tmp_path)
+    for bad in ("fullchain.pem", "/etc/ssl/a b.pem", "/etc/ssl/x;.pem", "/etc/ssl/../x.pem", "/etc/ssl/x|y.pem"):
+        r = _check_cert(bad, key)
+        assert r.returncode != 0 and "TLS_CERT" in r.stdout, bad
+    assert _check_cert(tmp_path / "missing.pem", key).returncode != 0
+    assert _check_cert(cert, tmp_path / "missing.key").returncode != 0
+
+
+def _certificate_source(tmp_path, env: dict, record: str | None) -> subprocess.CompletedProcess:
+    path = tmp_path / "tls-certificate"
+    path.unlink(missing_ok=True)
+    if record is not None:
+        path.write_text(record)
+    script = _install_function("certificate_source") + f'certificate_source "{path}"'
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                          env={"PATH": "/usr/bin:/bin", **env})
+
+
+def test_certificate_source_prefers_the_environment_then_the_record(tmp_path):
+    given = {"TLS_CERT": "/etc/ssl/a/fullchain.pem", "TLS_KEY": "/etc/ssl/a/privkey.pem"}
+    record = "TLS_CERT=/etc/ssl/b/fullchain.pem\nTLS_KEY=/etc/ssl/b/privkey.pem\n"
+    assert _certificate_source(tmp_path, given, record).stdout.split() == list(given.values())
+    assert _certificate_source(tmp_path, {}, record).stdout.split() == ["/etc/ssl/b/fullchain.pem",
+                                                                        "/etc/ssl/b/privkey.pem"]
+    none = _certificate_source(tmp_path, {}, None)
+    assert none.returncode == 0 and none.stdout.strip() == ""          # Let's Encrypt
+    r = _certificate_source(tmp_path, {"TLS_CERT": "/etc/ssl/a/fullchain.pem"}, None)
+    assert r.returncode != 0 and "both" in r.stdout
+
+
+def test_nginx_site_serves_the_chosen_certificate():
+    text = (DEPLOY / "nginx-site.conf").read_text()
+    assert "ssl_certificate     @TLS_CERT@;" in text and "ssl_certificate_key @TLS_KEY@;" in text
+    assert "/etc/letsencrypt" not in text.split("# BEGIN TLS")[1]
+    script = _install_function("render_site") + (
+        f'BUNDLE="{DEPLOY}" MCP_HOSTNAME=mcp.example.test LISTEN_PORT=8765 NAME=mcp-server-imap-smtp HAVE_IPV6=0 '
+        'CERT=/etc/ssl/a/fullchain.pem KEY=/etc/ssl/a/privkey.pem; render_site full')
+    site = "\n".join(_bash(script))
+    assert "ssl_certificate     /etc/ssl/a/fullchain.pem;" in site
+    assert "ssl_certificate_key /etc/ssl/a/privkey.pem;" in site
+    assert "@" not in site.replace("$remote_addr", "")
+
+
+def test_operator_certificate_skips_certbot_and_says_whose_job_renewal_is():
+    install = (DEPLOY / "install.sh").read_text()
+    certbot = install.index("certbot certonly")
+    assert install.rfind('if [[ -z $TLS_CERT && ! -s $CERT ]]', 0, certbot) != -1
+    preflight = install.split("# --- 2. Packages")[0]
+    assert '[[ -z $TLS_CERT && ! -s $CERT ]]' in preflight            # no ADMIN_EMAIL or LE_AGREE_TOS needed
+    assert "check_operator_cert" in preflight                         # checked before anything changes
+    assert "renewal is yours" in install
+
+
+def test_build_prints_ship_commands_that_survive_spaces_in_the_checkout_path():
+    """The printed scp line is pasted as it is; a checkout under a directory with a space broke it."""
+    build = (DEPLOY / "build.sh").read_text()
+    commands = build.split("Ship and install", 1)[1]
+    assert "scp $dist/$name.tar.gz" not in commands
+    assert 'bundle_q="$(printf %q "$dist/$name.tar.gz")"' in build and "scp $bundle_q " in commands
+
+
+def test_certbot_failure_names_the_way_without_a_public_name():
+    install = (DEPLOY / "install.sh").read_text()
+    failure = install.split("certbot certonly", 1)[1].split("\nfi\n", 1)[0]
+    assert "TLS_CERT" in failure and "Cloudflare" not in failure

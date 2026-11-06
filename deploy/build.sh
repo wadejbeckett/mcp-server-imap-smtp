@@ -90,6 +90,7 @@ PIP_DISABLE_PIP_VERSION_CHECK=1 "$work/venv/bin/pip" check >/dev/null
 "$work/venv/bin/mcp-server-imap-smtp-admin" --help >/dev/null
 
 tar -C "$dist" -czf "$dist/$name.tar.gz" "$name"
+bundle_q="$(printf %q "$dist/$name.tar.gz")"   # pasted as printed, so quoted for a path with spaces
 
 cat <<EOF
 
@@ -102,7 +103,7 @@ Ship and install (replace VPS, MCP_HOSTNAME and, on a server installed under ano
 unit, so a dropped SSH connection cannot kill it half-way; its output is in /root/mcp-server-imap-smtp-install.log.
 
   VPS=root@<vps address>
-  scp $dist/$name.tar.gz \$VPS:/root/
+  scp $bundle_q \$VPS:/root/
   ssh \$VPS 'tar -xzf /root/$name.tar.gz -C /root && \\
       systemd-run --quiet --unit mcp-server-imap-smtp-install --collect --wait \\
         -p StandardOutput=truncate:/root/mcp-server-imap-smtp-install.log -p StandardError=inherit \\

@@ -7,6 +7,7 @@ Local development, operator commands, configuration reference and testing. Produ
 Work from the root of a clone of the repository. You need Python 3.11 or later and [uv](https://docs.astral.sh/uv/).
 
 ```bash
+git clone https://github.com/wadejbeckett/mcp-server-imap-smtp.git
 cd mcp-server-imap-smtp
 uv venv && uv pip install -e '.[dev]'
 cp config.example.toml local.toml            # local.toml is git-ignored
@@ -282,4 +283,4 @@ Mounting the connector under a path leaves the rest of the host free for other s
 
 ## Mail servers with a private certificate authority
 
-The connector verifies every mail server's TLS certificate against the system's trusted CAs and the configured `host` name. For a server whose certificate comes from your own CA, add the CA to the system store (Debian: copy the PEM file to `/usr/local/share/ca-certificates/<name>.crt`, run `update-ca-certificates`, then restart the service). A certificate the connector does not trust makes sign-in say the mail server could not be reached; the log says why ("could not reach mail.example.com: unable to get local issuer certificate").
+The connector verifies every mail server's TLS certificate against the system's trusted CAs and the configured `host` name. For a server whose certificate comes from your own CA, add the CA to the system store (Debian: copy the PEM file to `/usr/local/share/ca-certificates/<name>.crt`, run `update-ca-certificates`, then restart the service). A certificate the connector does not trust makes sign-in say the mail server could not be reached; the log says why ("could not reach mail.example.com: unable to get local issuer certificate"). On a server installed with `deploy/install.sh`, add the CA before re-running it: its summary checks every configured mail server's certificate with the same trust store ("Mail servers TLS"). The gateway's own HTTPS certificate is a separate matter: [DEPLOY.md](DEPLOY.md), "Without Let's Encrypt".

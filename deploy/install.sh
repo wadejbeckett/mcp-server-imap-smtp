@@ -13,6 +13,11 @@
 #   LE_AGREE_TOS   must be "yes" while no certificate exists: you accept the Let's Encrypt Subscriber
 #                  Agreement (https://letsencrypt.org/repository/) for this account.
 #   LE_STAGING=1   issue from the Let's Encrypt staging CA (testing; browsers will not trust it).
+#   TLS_CERT, TLS_KEY  serve this certificate (full chain, PEM) and key instead of getting one from Let's
+#                  Encrypt, for a gateway Let's Encrypt cannot reach or a certificate from another CA. Both
+#                  absolute paths; the key owned by root and not readable by others. Remembered in
+#                  /etc/$NAME/tls-certificate for later runs. No renewal timer: renewing it is the operator's
+#                  job (replace the files, then systemctl reload nginx). ADMIN_EMAIL is then not needed.
 #   EGRESS         "restricted" (default): outbound IMAP/SMTP only to the configured mail servers, plus DNS,
 #                  NTP, DHCP, HTTP and HTTPS; "open": all outbound traffic allowed.
 #   SSH_HARDEN=0   do not write the sshd drop-in (keys only, no forwarding).
@@ -46,6 +51,46 @@ die()  { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
 log()  { printf '==> %s\n' "$*"; }
 
+# --- Operator-supplied certificate (TLS_CERT, TLS_KEY) -----------------------------------------------
+# An absolute path of plain characters: it goes into the nginx site through sed, and nginx would misread a
+# space or a semicolon.
+safe_path() { [[ $1 =~ ^/[A-Za-z0-9._/+-]+$ && $1 != *..* ]]; }
+
+# check_operator_cert CERT KEY HOSTNAME: prints why nginx should not serve this certificate, and fails.
+check_operator_cert() {
+    local cert=$1 key=$2 host=$3 owner mode
+    safe_path "$cert" || { echo "TLS_CERT must be an absolute path of letters, digits and ._/+- (got '$cert')"; return 1; }
+    safe_path "$key" || { echo "TLS_KEY must be an absolute path of letters, digits and ._/+- (got '$key')"; return 1; }
+    [[ -f $cert && -r $cert ]] || { echo "TLS_CERT $cert is not a readable file"; return 1; }
+    [[ -f $key && -r $key ]] || { echo "TLS_KEY $key is not a readable file"; return 1; }
+    # The key belongs to the user running this script (root) and nobody else may read it; a group (for
+    # example ssl-cert) may read it but not change it.
+    read -r owner mode < <(stat -Lc '%u %a' "$key")
+    [[ $owner == "$EUID" ]] || { echo "TLS_KEY $key must be owned by root"; return 1; }
+    (( (8#$mode & 8#027) == 0 )) || { echo "TLS_KEY $key has mode $mode: it must not be readable by others or writable by its group (chmod 600)"; return 1; }
+    openssl x509 -in "$cert" -noout 2>/dev/null || { echo "TLS_CERT $cert is not a PEM certificate"; return 1; }
+    openssl x509 -in "$cert" -noout -checkhost "$host" 2>/dev/null | grep -q ' does match' \
+        || { echo "TLS_CERT $cert is not valid for $host (check its subjectAltName)"; return 1; }
+    openssl x509 -in "$cert" -noout -checkend 0 >/dev/null || { echo "TLS_CERT $cert has expired"; return 1; }
+    [[ $(openssl x509 -in "$cert" -noout -subject_hash) != "$(openssl x509 -in "$cert" -noout -issuer_hash)" ]] \
+        || { echo "TLS_CERT $cert is self-signed: browsers and AI apps refuse it. Use a certificate from a CA the users' apps trust"; return 1; }
+    [[ $(openssl x509 -in "$cert" -noout -pubkey | openssl pkey -pubin -outform DER | sha256sum) == \
+       "$(openssl pkey -in "$key" -pubout -outform DER 2>/dev/null | sha256sum)" ]] \
+        || { echo "TLS_KEY $key does not belong to TLS_CERT $cert"; return 1; }
+}
+
+# certificate_source RECORD: the operator's certificate and key, one per line, from TLS_CERT and TLS_KEY
+# or else from RECORD (written by an earlier run); nothing when the certificate comes from Let's Encrypt.
+certificate_source() {
+    local cert=${TLS_CERT:-} key=${TLS_KEY:-}
+    if [[ -z $cert && -z $key && -f $1 ]]; then
+        cert="$(sed -n 's/^TLS_CERT=//p' "$1")"; key="$(sed -n 's/^TLS_KEY=//p' "$1")"
+    fi
+    [[ -n $cert || -n $key ]] || return 0
+    [[ -n $cert && -n $key ]] || { echo "set both TLS_CERT and TLS_KEY, or neither"; return 1; }
+    printf '%s\n%s\n' "$cert" "$key"
+}
+
 [[ $EUID -eq 0 ]] || die "run as root"
 
 BUNDLE="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")}" && pwd)"
@@ -67,7 +112,7 @@ STATE=/var/lib/$NAME
 BACKUPS=/var/backups/$NAME
 ACME_ROOT=/var/www/acme
 SITE=/etc/nginx/sites-available/$NAME.conf
-CERT=/etc/letsencrypt/live/$MCP_HOSTNAME/fullchain.pem
+TLS_RECORD=$ETC/tls-certificate
 
 [[ $MCP_HOSTNAME =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]] || die "MCP_HOSTNAME '$MCP_HOSTNAME' is not a lowercase DNS name"
 if [[ ! $KEEP_RELEASES =~ ^[0-9]+$ ]] || (( KEEP_RELEASES < 2 )); then die "KEEP_RELEASES must be a number >= 2"; fi
@@ -96,8 +141,22 @@ WHEEL="$(sed -n 's/^wheel=//p' "$BUNDLE/BUILD_INFO")"
 [[ $WHEEL =~ ^mcp_server_imap_smtp-[A-Za-z0-9._+-]+\.whl$ && -f $BUNDLE/$WHEEL ]] || die "wheel '$WHEEL' from BUILD_INFO not found in bundle"
 log "Release $RELEASE for https://$MCP_HOSTNAME"
 
-# Certificate inputs are checked now, before anything on the host changes.
-if [[ ! -s $CERT ]]; then
+# Certificate inputs are checked now, before anything on the host changes. TLS_CERT is empty when the
+# certificate comes from Let's Encrypt.
+mapfile -t tls < <(certificate_source "$TLS_RECORD") ; [[ ${#tls[@]} -ne 1 ]] || die "${tls[0]}"
+TLS_CERT="${tls[0]:-}" TLS_KEY="${tls[1]:-}"
+if [[ -n $TLS_CERT ]]; then
+    command -v openssl >/dev/null || die "openssl is needed to check TLS_CERT: apt-get install openssl"
+    problem="$(check_operator_cert "$TLS_CERT" "$TLS_KEY" "$MCP_HOSTNAME")" || die "$problem"
+    CERT=$TLS_CERT KEY=$TLS_KEY
+    openssl x509 -in "$CERT" -noout -checkend $((30 * 86400)) >/dev/null || warn "$CERT expires within 30 days"
+    openssl verify -untrusted "$CERT" "$CERT" >/dev/null 2>&1 \
+        || warn "$CERT does not chain to a CA this server trusts: every AI app and browser that connects must trust its issuer"
+    log "Certificate: $CERT (operator-supplied; renewal is yours)"
+else
+    CERT=/etc/letsencrypt/live/$MCP_HOSTNAME/fullchain.pem KEY=/etc/letsencrypt/live/$MCP_HOSTNAME/privkey.pem
+fi
+if [[ -z $TLS_CERT && ! -s $CERT ]]; then
     [[ -n $ADMIN_EMAIL ]] || die "no certificate for $MCP_HOSTNAME yet: set ADMIN_EMAIL for the Let's Encrypt account"
     [[ $LE_AGREE_TOS == yes ]] || die "no certificate for $MCP_HOSTNAME yet: set LE_AGREE_TOS=yes to accept the Let's Encrypt Subscriber Agreement"
 fi
@@ -173,6 +232,11 @@ if [[ ! -s $SEALING_SECRET ]]; then
 fi
 chown root:root "$SEALING_SECRET"
 chmod 0400 "$SEALING_SECRET"
+if [[ -n $TLS_CERT ]]; then
+    printf '# Written by %s install.sh: the certificate nginx serves. Delete this file to go back to Let'"'"'s Encrypt.\nTLS_CERT=%s\nTLS_KEY=%s\n' \
+        "$NAME" "$TLS_CERT" "$TLS_KEY" > "$TLS_RECORD.new"
+    mv -f "$TLS_RECORD.new" "$TLS_RECORD"
+fi
 if grep -qE '"(Example Hosting|Example Mail)"|"mail\.(example\.com|client\.example)"' "$CONFIG"; then
     warn "$CONFIG still has the template's example names or mail servers: set operator_name, product_name, the support"
     warn "contacts and [[mail_servers]] to your own, then systemctl restart $NAME (docs/DEPLOY.md, section 4)"
@@ -339,7 +403,8 @@ HAVE_IPV6=0
 
 render_site() {   # render_site full|bootstrap
     local out
-    out="$(sed -e "s/@MCP_HOSTNAME@/$MCP_HOSTNAME/g" -e "s/@LISTEN_PORT@/$LISTEN_PORT/g" -e "s/@NAME@/$NAME/g" "$BUNDLE/nginx-site.conf")"
+    out="$(sed -e "s/@MCP_HOSTNAME@/$MCP_HOSTNAME/g" -e "s/@LISTEN_PORT@/$LISTEN_PORT/g" -e "s/@NAME@/$NAME/g" \
+               -e "s|@TLS_CERT@|$CERT|g" -e "s|@TLS_KEY@|$KEY|g" "$BUNDLE/nginx-site.conf")"
     (( HAVE_IPV6 )) || out="$(grep -v '# ipv6$' <<<"$out")"
     [[ $1 == full ]] || out="$(sed '/^# BEGIN TLS$/,/^# END TLS$/d' <<<"$out")"
     printf '%s\n' "$out"
@@ -375,7 +440,7 @@ install_site() {  # install_site full|bootstrap: write, test, reload; restore th
 }
 
 log "nginx site for $MCP_HOSTNAME"
-if [[ ! -s $CERT ]]; then
+if [[ -z $TLS_CERT && ! -s $CERT ]]; then
     install_site bootstrap
     if ! getent ahosts "$MCP_HOSTNAME" >/dev/null; then
         warn "$MCP_HOSTNAME does not resolve yet; certificate issuance will fail until DNS points here"
@@ -386,10 +451,22 @@ if [[ ! -s $CERT ]]; then
     certbot certonly --webroot --webroot-path "$ACME_ROOT" --domain "$MCP_HOSTNAME" --cert-name "$MCP_HOSTNAME" \
         --non-interactive --agree-tos --email "$ADMIN_EMAIL" --no-eff-email \
         --deploy-hook 'systemctl reload nginx' "${staging[@]}" \
-        || die "certbot failed. Check that $MCP_HOSTNAME resolves to this server (Cloudflare DNS-only) and port 80 is reachable, then re-run"
+        || die "certbot failed (its reason is above). Let's Encrypt must reach http://$MCP_HOSTNAME/.well-known/acme-challenge/
+from the internet: the name must resolve publicly to this server, not to a proxy, and port 80 must be open. Fix
+that and re-run. A gateway Let's Encrypt cannot reach (no public name, a private network) needs a certificate
+from elsewhere: TLS_CERT and TLS_KEY (docs/DEPLOY.md, \"Without Let's Encrypt\")"
 fi
 install_site full
-systemctl enable --quiet certbot.timer 2>/dev/null || warn "certbot.timer not enabled; certificates will not renew automatically"
+if [[ -n $TLS_CERT ]]; then
+    renewal="yours: replace $CERT and $KEY before it expires, then systemctl reload nginx"
+elif [[ ! -f /etc/letsencrypt/renewal/$MCP_HOSTNAME.conf ]]; then
+    # A certificate put in certbot's directory by hand: certbot.timer does not know it. TLS_CERT is the way.
+    renewal="none: certbot did not issue $CERT, so certbot.timer will not renew it"
+    warn "$CERT was not issued by certbot and will not be renewed: use TLS_CERT and TLS_KEY (docs/DEPLOY.md)"
+else
+    systemctl enable --quiet certbot.timer 2>/dev/null || warn "certbot.timer not enabled; certificates will not renew automatically"
+    renewal="certbot.timer $(systemctl is-enabled certbot.timer 2>/dev/null || echo missing)"
+fi
 
 # --- 9. Activate: units, helpers, symlink switch, restart, health check --------------------------
 log "Installing systemd units and helpers"
@@ -504,7 +581,7 @@ Gateway (direct)   ok: http://127.0.0.1:$LISTEN_PORT$PRM
 Gateway via nginx  $via_nginx (TLS on 127.0.0.1, certificate not checked here)
 Unauthenticated    POST $MAIL_PATH -> HTTP $unauth (expect 401)
 Certificate        ${cert_issuer:-?}; expires ${cert_end:-?}
-Renewal timer      $(systemctl is-enabled certbot.timer 2>/dev/null || echo missing)
+Renewal            $renewal
 Backup timer       $(systemctl is-enabled "$NAME-backup.timer") (next: $(systemctl show -P NextElapseUSecRealtime "$NAME-backup.timer" 2>/dev/null || echo ?))
 Firewall           $(ufw status | head -n1)
 Global addresses   ${addrs[*]:-none found}

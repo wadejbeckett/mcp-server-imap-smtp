@@ -51,9 +51,16 @@ Users can add or remove mailboxes, or enter a changed password, later on the con
 
 ## Quick start
 
+```
+git clone https://github.com/wadejbeckett/mcp-server-imap-smtp.git
+cd mcp-server-imap-smtp
+```
+
 - **Run it locally,** configure it and use the admin CLI: [docs/RUNNING.md](docs/RUNNING.md).
-- **Deploy it** to a Debian 12 or 13 server behind nginx with Let's Encrypt, a sandboxed systemd unit, a firewall that only lets it reach your mail servers, and nightly backups: [docs/DEPLOY.md](docs/DEPLOY.md).
+- **Deploy it** to a Debian 12 or 13 server behind nginx, with a certificate from Let's Encrypt or one you supply, a sandboxed systemd unit, a firewall that only lets it reach your mail servers, and nightly backups: [docs/DEPLOY.md](docs/DEPLOY.md). You build a bundle on your own machine, copy it to the server and run its `install.sh` there.
 - **Check it end to end:** `deploy/smoke.sh` tests a running instance without signing in; `deploy/e2e.py` signs in with a test mailbox the way an AI app does, uses the tools (with `--write` and `--send`, drafts and a message to itself), moves the messages it made to Trash and revokes its connection: [docs/DEPLOY.md](docs/DEPLOY.md), "Check the whole path".
+
+To run it locally from the clone:
 
 ```
 uv venv && uv pip install -e ".[dev]"
