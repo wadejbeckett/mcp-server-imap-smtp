@@ -912,6 +912,12 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
                                  "Save a draft instead, or try again later.")
             taken.append(budget)
 
+    def refund_send_budget(grant: str) -> None:
+        """Give back the slot take_send_budget counted, for a message that never left (refused before MAIL
+        FROM, smtp.nothing_sent)."""
+        for budget, _, _ in budgets:
+            budget.refund(grant)
+
     def check_recipients(m, bcc: list[str]) -> None:
         """Raises ValueError (its text goes back to the AI) when a message breaks the sending rules."""
         if bcc and not settings.send_allow_bcc:
@@ -966,8 +972,14 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
                     m = compose.new(a, to, subject, text, html, cc or (), fetch=fetch_image, files=files)
                 check_recipients(m, list(bcc or ()))
                 take_send_budget(grant)
-                # Not refunded on failure: an error after DATA may still have delivered the message.
-                accepted = sender(cred.server, a, cred.password, m, bcc=bcc or ())
+                try:
+                    accepted = sender(cred.server, a, cred.password, m, bcc=bcc or ())
+                except Exception as exc:
+                    # Refunded only when nothing can have left (a SIZE refusal before MAIL FROM, say): an
+                    # error after DATA may still have delivered the message.
+                    if smtp.nothing_sent(exc):
+                        refund_send_budget(grant)
+                    raise
                 # From here the mail is gone: nothing below may turn into an error, or the caller would retry.
                 out = {"sent_to": accepted, "subject": m["Subject"], "message_id": str(m["Message-ID"]),
                        "saved_to_sent": False}

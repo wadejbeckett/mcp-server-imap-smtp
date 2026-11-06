@@ -174,12 +174,30 @@ def size_limit(s: smtplib.SMTP) -> int | None:
     return limit_value(s.esmtp_features.get("size") or "") if s.has_extn("size") else None
 
 
+def nothing_sent(exc: BaseException) -> bool:
+    """True for a send() failure that came before MAIL FROM (a SIZE refusal, the sign-in, the connection):
+    no message can have left, so a send budget may be given back."""
+    return getattr(exc, "nothing_sent", False)
+
+
 def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc=(),
          local_hostname: str | None = None) -> list[str]:
     """Send msg as the mailbox through server (port server.smtp_port, implicit TLS or STARTTLS per
-    server.smtp_security); returns the recipients the server accepted (To, Cc and bcc).
+    server.smtp_security); returns the recipients the server accepted (To, Cc and bcc). A failure
+    before MAIL FROM is marked (nothing_sent).
 
     local_hostname is the EHLO name; None takes server.ehlo_name (see _ehlo_name)."""
+    started = []          # holds True once MAIL FROM may have gone out
+    try:
+        return _send(server, address, password, msg, bcc, local_hostname, started)
+    except Exception as exc:
+        if not started:
+            exc.nothing_sent = True
+        raise
+
+
+def _send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc, local_hostname: str | None,
+          started: list) -> list[str]:
     rcpts = envelope_recipients(msg, bcc)  # validated before any connection is made
     # Decided outside any except block, so no exception that mentions the password can end up
     # as __context__ of the error we raise.
@@ -214,6 +232,7 @@ def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc
         if limit is not None and size > limit:      # refused before AUTH and before MAIL FROM
             raise MailError(too_large(size, limit, "the mail server (SMTP SIZE)"))
         _login(s, address, password)
+        started.append(True)        # send_message starts with MAIL FROM
         refused = s.send_message(wire, from_addr=address, to_addrs=rcpts, mail_options=options)
         return [r for r in rcpts if r not in refused]
     except _Cleartext as exc:

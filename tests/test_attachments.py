@@ -801,3 +801,53 @@ def test_size_limits_are_described_as_each_tool_applies_them(env):
     assert "refused before anything is uploaded" not in send + draft
     assert "SMTP SIZE" in send and "is still sent" in send and "Sent copy" in send
     assert "APPENDLIMIT" in draft and "SMTP SIZE" not in draft and "refused before it is saved" in draft
+
+
+def test_a_size_refusal_is_marked_as_nothing_sent(wire):
+    client, server, ms = wire(extensions=["8BITMIME", "SIZE 1000"])
+    with pytest.raises(MailError) as exc:
+        smtp.send(ms, ADDR, SECRET, compose.new(ADDR, ["a@b.co"], "Hi", "body", files=[f(data=b"x" * 2000)]))
+    assert smtp.nothing_sent(exc.value)
+
+
+def test_a_refusal_after_mail_from_is_not_marked(wire):
+    client, server, ms = wire(data_code="554 5.6.0 rejected")
+    with pytest.raises(MailError) as exc:
+        smtp.send(ms, ADDR, SECRET, compose.new(ADDR, ["a@b.co"], "Hi", "body"))
+    assert not smtp.nothing_sent(exc.value)
+
+
+def _limited(env, monkeypatch, sender, **limits):
+    """A server like build()'s with send budgets set and the given sender."""
+    import dataclasses
+    s, store, _ = env
+    srv = MCPServer("t")
+    tools_mod.register_mail_tools(srv, store, dataclasses.replace(s, **limits), opener=lambda *a: FakeImap(),
+                                  sender=sender)
+    return srv
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("before_mail_from", [True, False])
+async def test_a_send_refused_before_mail_from_gives_its_budget_slot_back(env, monkeypatch, before_mail_from):
+    sent = []
+
+    def sender(server, a, pw, m, bcc=()):
+        if not sent and not getattr(sender, "failed", False):
+            sender.failed = True
+            refusal = MailError(compose.too_large(2000, 1000, "the mail server (SMTP SIZE)"))
+            if before_mail_from:
+                refusal.nothing_sent = True
+            raise refusal
+        sent.append(m)
+        return [str(m["To"])]
+    srv = _limited(env, monkeypatch, sender, send_hourly_limit=1)
+    with pytest.raises(ToolError, match="SMTP SIZE"):
+        await srv.call_tool("mail_send", DRAFT)
+    if before_mail_from:
+        await srv.call_tool("mail_send", DRAFT)
+        assert len(sent) == 1
+    else:
+        with pytest.raises(ToolError, match="sending limit"):
+            await srv.call_tool("mail_send", DRAFT)
+        assert sent == []
