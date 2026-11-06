@@ -485,8 +485,20 @@ def test_the_main_mailbox_is_checked_alone_first(tmp_path):
 
 def test_a_wrong_listed_password_stops_further_checks(tmp_path):
     calls = []
+    refused = threading.Event()
     def verify(a, p, server):
-        calls.append(a); return a != "box5@x.co.za"
+        calls.append(a)
+        if a == "box1@x.co.za":             # the main mailbox, checked alone first
+            return True
+        if a == "box5@x.co.za":
+            refused.set()
+            return False
+        # A real mail server takes far longer to answer than the page takes to note a refusal. Instant
+        # answers let the other workers race ahead before the refusal was recorded (seen on fast CI
+        # runners), so the right passwords answer a moment after the wrong one has been refused.
+        refused.wait(10)
+        time.sleep(0.2)
+        return True
     c, req, store, _ = make_env(tmp_path, verify, limit=50)
     r = c.post("/mail/login", data={"req": req, **boxes(88)})
     assert "Line 4 (box5@x.co.za): address or password incorrect." in r.text and store.list_grants() == []
