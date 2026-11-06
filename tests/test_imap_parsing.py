@@ -284,6 +284,8 @@ def patch_open(monkeypatch, login=None, authenticate=None, construct=None):
     holder = {"calls": []}
 
     class FakeConn:
+        capabilities = ("IMAP4REV1",)    # what the server said after the greeting, as imaplib keeps it
+
         def __init__(self, s):
             holder["conn"] = self
             holder["sock"] = s

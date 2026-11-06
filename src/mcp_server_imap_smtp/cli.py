@@ -172,7 +172,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.cmd == "servers":
         for m in settings.mail_servers:
             domains = " ".join(m.domains) or "-"
-            print(f"{m.host}  imap {m.imap_port}  smtp {m.smtp_port}  domains {domains}  "
+            print(f"{m.host}  imap {m.imap_port} {m.imap_security}  smtp {m.smtp_port} {m.smtp_security}  "
+                  f"domains {domains}  "
                   f"match_mx {'yes' if m.match_mx else 'no'}")
         return
     db_path = settings.db_path

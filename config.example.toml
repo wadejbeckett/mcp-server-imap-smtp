@@ -15,10 +15,13 @@ support_email = "support@example.com"
 # those mailboxes must reconnect.
 # legacy_mail_host = "mail.example.com"
 
+# The name given in SMTP EHLO. Unset: the host name in issuer_url (never this machine's own name).
+# ehlo_name = "mcp.example.com"
+
 # The mail servers the connector may sign in to. Keep top-level keys above the first table.
 # One server with no DNS lookups: delete the tables and set mail_host = "mail.example.com" instead.
 [[mail_servers]]
-host = "mail.example.com"        # imap_port and smtp_port default to 993 and 465
+host = "mail.example.com"        # IMAPS 993 and SMTPS 465 (imap_security = smtp_security = "tls")
 match_mx = true                  # serve any domain whose MX is this host or a name under it
 max_sessions = 8                 # IMAP and SMTP sessions open on this server at once, all users together
 
@@ -26,3 +29,7 @@ max_sessions = 8                 # IMAP and SMTP sessions open on this server at
 host = "mail.client.example"
 domains = ["client.example"]     # exact domains or "*.suffix"; matched before MX
 match_mx = false
+# A server that only offers STARTTLS: "starttls" (submission 587, IMAP 143 unless a port is set). It must
+# be offered and verified before any password; there is no cleartext mode.
+# smtp_security = "starttls"
+# imap_security = "starttls"

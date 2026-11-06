@@ -21,11 +21,13 @@ host = "mail.client.example"
 domains = ["client.example", "*.client.example"]   # exact domains, or "*.suffix" for every subdomain
 match_mx = false
 max_sessions = 16
+smtp_security = "starttls"       # submission on 587 with STARTTLS; imap_security = "starttls" means IMAP on 143
 ```
 
 - **Explicit domains first.** `domains` lists the domains a server hosts. `"*.client.example"` matches every subdomain of client.example, not client.example itself. A lone `"*"` would send every otherwise unmatched address to that server, including addresses you do not host; keep it out of any public deployment.
 - **Then MX matching.** With `match_mx = true`, a domain is served by this host when its MX record names the host, a name under it, or one of its addresses. DNS only decides whether an address is served. The TLS certificate is always checked against the `host` you configured, so a DNS answer cannot send passwords to another machine.
 - **The server is sealed in with the password.** When a mailbox connects, its server is sealed together with its password, so a later DNS change or a database edit cannot redirect it.
+- **TLS before any password.** Each server is reached over TLS from the first byte (`"tls"`, the default: IMAPS 993, SMTPS 465) or with STARTTLS (`"starttls"`: IMAP 143, submission 587), set per server with `imap_security` and `smtp_security`. STARTTLS must be offered and must succeed, with the certificate verified against `host`, before anything else is sent; a server that does not offer it is refused, never used in cleartext.
 - **Per-server caps.** `max_sessions` limits how many sessions the connector holds open on that server for all users together. Further requests wait their turn fairly, connection by connection. Mail servers see every user arriving from the connector's one address, so set this below the point where the server starts slowing down. Keep `max_sessions_per_mailbox` below Dovecot's `mail_max_userip_connections`.
 - **No servers, no service.** Every other server is refused. A configuration with no mail servers does not start.
 

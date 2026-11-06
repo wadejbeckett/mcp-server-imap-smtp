@@ -3,9 +3,11 @@
 may keep it logged in between calls (reset() makes it behave like a fresh one)."""
 from __future__ import annotations
 
+import base64
 import imaplib
 import re
 import socket
+import ssl
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -13,7 +15,7 @@ from email.parser import BytesHeaderParser
 from email import policy as email_policy
 
 from . import utf7
-from .hosts import Connector, MailServer
+from .hosts import Connector, MailServer, StartTLSRefused, reader_buffered
 from .resolve import normalise_address
 
 SPECIAL = {"\\sent": "sent", "\\drafts": "drafts", "\\trash": "trash", "\\junk": "junk", "\\archive": "archive"}
@@ -177,12 +179,94 @@ class _Conn(imaplib.IMAP4):
             self.broken = True
             raise
 
+    def buffered(self) -> bytes:
+        """What imaplib has read past the last response: its own buffer on Python 3.14, a buffered file before."""
+        pending = b"".join(getattr(self, "_readbuf", None) or [])
+        return pending or reader_buffered(self.__dict__.get("file"))
+
+    def use_tls(self, tls) -> None:
+        """Carry on over the verified TLS socket, as imaplib's own starttls() would, forgetting every untagged
+        response and capability from before TLS (RFC 9051 s6.2.1) and asking for the capabilities again."""
+        self.sock = tls
+        if hasattr(self, "_readbuf"):           # Python 3.14: imaplib reads the socket itself
+            self._readbuf = []
+            self._file = tls.makefile("rb")
+        else:
+            self.file = tls.makefile("rb")
+        self._tls_established = True
+        self.untagged_responses = {}
+        self.capabilities = ()
+        self._get_capabilities()
+
+
+class _Cleartext(Exception):
+    """A STARTTLS refusal after which a cleartext LOGOUT is still safe (the server does not offer it)."""
+
+
+def _starttls(conn: _Conn, connector: Connector, port: int) -> None:
+    """RFC 9051 s6.2.1 on a plain connection whose greeting and CAPABILITY imaplib has read: require STARTTLS,
+    upgrade with the verified context, then forget and re-read the capabilities. Nothing but CAPABILITY,
+    STARTTLS and (on a refusal) LOGOUT is ever sent in cleartext."""
+    if conn.state != "NONAUTH":
+        # PREAUTH on a plain connection: the session is already signed in and cannot be protected (RFC 9051
+        # s7.1.4 says to close it). It is dropped without another word.
+        raise StartTLSRefused("the mail server signed the session in before TLS (PREAUTH)")
+    if "STARTTLS" not in conn.capabilities:
+        raise _Cleartext(f"the mail server does not offer STARTTLS on port {port}; set imap_security = \"tls\" "
+                         "if it speaks TLS from the start (usually port 993)")
+    try:
+        typ, _ = conn._simple_command("STARTTLS")
+    except imaplib.IMAP4.abort:
+        raise
+    except imaplib.IMAP4.error:           # BAD
+        typ = "BAD"
+    if typ != "OK":
+        raise _Cleartext(f"the mail server refused STARTTLS ({typ})")
+    conn.use_tls(connector.starttls(conn.sock, buffered=conn.buffered()))
+
+
+def _login_kind(caps, password: str) -> str | None:
+    """How to sign in, from the capabilities read over TLS: AUTHENTICATE PLAIN in one line when the server
+    offers it with SASL-IR (RFC 4959); else LOGIN, unless LOGINDISABLED or the password is not ASCII (LOGIN
+    is ASCII-only); else AUTHENTICATE PLAIN with a continuation. None: the server allows none of these."""
+    if "AUTH=PLAIN" in caps and "SASL-IR" in caps:
+        return "sasl-ir"
+    if password.isascii() and "LOGINDISABLED" not in caps:
+        return "login"
+    if "AUTH=PLAIN" in caps or "LOGINDISABLED" not in caps:
+        return "plain"
+    return None
+
+
+def _sign_in(conn: _Conn, kind: str, address: str, password: str) -> None:
+    if kind == "login":
+        conn.login(address, password)
+        return
+    secret = b"\0" + address.encode() + b"\0" + password.encode("utf-8")   # UTF-8, RFC 4616
+    if kind == "plain":
+        conn.authenticate("PLAIN", lambda _: secret)
+        return
+    typ, dat = conn._simple_command("AUTHENTICATE", "PLAIN", base64.b64encode(secret).decode("ascii"))
+    if typ != "OK":
+        raise conn.error(dat[-1])         # as imaplib's login(): the reply text, for the RFC 5530 codes below
+    conn.state = "AUTH"
+
 
 def _drop(conn) -> None:
     try:
         conn.shutdown()
     except Exception:
         pass
+
+
+def _logout(conn) -> None:
+    """A polite LOGOUT, then the socket is shut whatever happened."""
+    try:
+        conn.logout()
+    except Exception:
+        pass
+    finally:
+        _drop(conn)
 
 
 _RESP_CODE = re.compile(r"\s*\[([A-Za-z-]+)")
@@ -215,8 +299,9 @@ class ImapClient:
 
     @classmethod
     def open(cls, server: MailServer, address: str, password: str) -> "ImapClient":
-        """Log in to address's mailbox on server (port server.imap_port). The caller has already
-        chosen the server (resolve.Resolver or a stored grant); the address is still validated."""
+        """Log in to address's mailbox on server (port server.imap_port, implicit TLS or STARTTLS per
+        server.imap_security). The caller has already chosen the server (resolve.Resolver or a stored
+        grant); the address is still validated."""
         address, _ = normalise_address(address)
         # Decided here, outside any except block, so no exception that mentions the password
         # can end up as __context__ of the error we raise.
@@ -228,7 +313,9 @@ class ImapClient:
                 unusable = True
         if unusable:
             raise MailAuthError("password contains characters the mail server login cannot accept")
-        sock = Connector(server).tls_connect(server.imap_port)
+        connector = Connector(server)
+        starttls = server.imap_security == "starttls"
+        sock = (connector.plain_connect if starttls else connector.tls_connect)(server.imap_port)
         try:
             sock.settimeout(TIMEOUT)
             conn = _Conn(sock)
@@ -241,12 +328,15 @@ class ImapClient:
         except BaseException:
             sock.close()
             raise
+        if starttls:
+            cls._secure(conn, connector, server.imap_port)
+        kind = _login_kind(conn.capabilities, password)
+        if kind is None:
+            _logout(conn)
+            raise MailError("the mail server does not allow LOGIN here (LOGINDISABLED) and offers no "
+                            "AUTHENTICATE PLAIN")
         try:
-            if password.isascii():
-                conn.login(address, password)
-            else:  # LOGIN is ASCII-only; AUTHENTICATE PLAIN carries UTF-8
-                secret = b"\0" + address.encode() + b"\0" + password.encode("utf-8")
-                conn.authenticate("PLAIN", lambda _: secret)
+            _sign_in(conn, kind, address, password)
         except (imaplib.IMAP4.abort, OSError) as exc:
             _drop(conn)
             raise MailError("mail server connection failed") from exc
@@ -264,6 +354,30 @@ class ImapClient:
             _drop(conn)
             raise
         return cls(conn, address)
+
+    @staticmethod
+    def _secure(conn: _Conn, connector: Connector, port: int) -> None:
+        """_starttls(), with each refusal turned into the error the caller expects; the connection is closed."""
+        try:
+            _starttls(conn, connector, port)
+        except _Cleartext as exc:
+            _logout(conn)
+            raise MailError(str(exc)) from None
+        except StartTLSRefused as exc:
+            _drop(conn)               # nothing more is said on a connection someone may be tampering with
+            raise MailError(f"STARTTLS refused: {exc}") from None
+        except ssl.SSLCertVerificationError:
+            _drop(conn)
+            raise                     # as from tls_connect: the caller tells the operator
+        except (imaplib.IMAP4.abort, OSError) as exc:
+            _drop(conn)
+            raise MailError("mail server connection failed") from exc
+        except imaplib.IMAP4.error as exc:
+            _drop(conn)
+            raise MailError("mail server refused the connection") from exc
+        except BaseException:
+            _drop(conn)
+            raise
 
     def __enter__(self):
         return self

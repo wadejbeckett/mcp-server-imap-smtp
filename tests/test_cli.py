@@ -131,11 +131,11 @@ def test_servers_list_prints_the_configured_servers(tmp_path, capsys):
     cfg.write_text(f'issuer_url="http://i"\nmail_resource_url="http://i/mail"\ndb_path="{tmp_path / "none.sqlite"}"\n'
                    '[[mail_servers]]\nhost="mail1.hosting.example"\n'
                    '[[mail_servers]]\nhost="mail.client.example"\ndomains=["client.example"]\nmatch_mx=false\n'
-                   'smtp_port=587\n')
+                   'smtp_security="starttls"\n')
     run(cfg, "servers", "list")          # needs no database
     assert capsys.readouterr().out.splitlines() == [
-        "mail1.hosting.example  imap 993  smtp 465  domains -  match_mx yes",
-        "mail.client.example  imap 993  smtp 587  domains client.example  match_mx no"]
+        "mail1.hosting.example  imap 993 tls  smtp 465 tls  domains -  match_mx yes",
+        "mail.client.example  imap 993 tls  smtp 587 starttls  domains client.example  match_mx no"]
     assert not (tmp_path / "none.sqlite").exists()
 
 

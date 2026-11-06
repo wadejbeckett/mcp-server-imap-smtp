@@ -189,6 +189,8 @@ def test_wrong_secret_is_not_a_replay(tmp_path):
 # --- a temporary IMAP failure is not a wrong password ------------------------------------
 
 class _NoConn:
+    capabilities = ("IMAP4REV1",)    # as imaplib keeps them after the greeting
+
     def __init__(self, text):
         self.text = text
 

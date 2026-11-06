@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 import re
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .mail.hosts import MailServer
+from .mail.hosts import MailServer, address_literal, is_ehlo_name
 
 DEFAULT_REDIRECTS = (
     "https://claude.ai/api/mcp/auth_callback",
@@ -88,12 +88,21 @@ class Settings:
     # key. Kept outside the database and its backups. Unset: the systemd credential "sealing-secret" is used
     # when the unit loads one (LoadCredential=), otherwise none (grant keys are wrapped with the token alone).
     sealing_secret_file: str = ""
+    # The name the connector gives in SMTP EHLO. Unset: the host name in issuer_url (an address literal when
+    # that is an IP address). Never the machine's own name, which would leak or invent one. A
+    # [[mail_servers]] entry may set its own.
+    ehlo_name: str = ""
 
     def __post_init__(self):
         if isinstance(self.mail_servers, list):
             object.__setattr__(self, "mail_servers", tuple(self.mail_servers))
         if not self.mail_servers or not all(isinstance(m, MailServer) for m in self.mail_servers):
             raise ValueError("mail_servers must hold at least one MailServer")
+        if self.ehlo_name and not is_ehlo_name(self.ehlo_name):
+            raise ValueError("ehlo_name must be a DNS name or an address literal such as [192.0.2.1]")
+        ehlo = self.ehlo_name or _public_ehlo_name(self.issuer_url)
+        object.__setattr__(self, "mail_servers", tuple(
+            m if m.ehlo_name or not ehlo else replace(m, ehlo_name=ehlo) for m in self.mail_servers))
         for name in ("operator_name", "product_name"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
                 raise ValueError(f"{name} must be a non-empty string")
@@ -151,18 +160,30 @@ class Settings:
         return urlparse(self.issuer_url).netloc
 
 
-_SERVER_KEYS = {"host", "imap_port", "smtp_port", "domains", "match_mx", "max_sessions"}
+def _public_ehlo_name(issuer_url: str) -> str:
+    """The host name in issuer_url as an EHLO name; an IP address becomes an address literal; "" if neither."""
+    host = urlparse(issuer_url).hostname or ""
+    try:
+        return address_literal(host)
+    except ValueError:
+        return host if is_ehlo_name(host) else ""
+
+
+_SERVER_KEYS = {"host", "imap_port", "smtp_port", "domains", "match_mx", "max_sessions", "imap_security",
+                "smtp_security", "ehlo_name"}
+_SERVER_DEFAULT_KEYS = ("imap_port", "smtp_port", "imap_security", "smtp_security")
 
 
 def _mail_servers(raw: dict) -> tuple[MailServer, ...]:
     """Either `[[mail_servers]]` tables or the legacy `mail_host = "..."` (one server for every
-    address, no DNS), never both. Top-level imap_port/smtp_port are the default ports for each."""
-    imap_port, smtp_port = raw.pop("imap_port", 993), raw.pop("smtp_port", 465)
+    address, no DNS), never both. Top-level imap_port, smtp_port, imap_security and smtp_security are
+    the defaults for each; a port set nowhere follows the server's security mode."""
+    defaults = {key: raw.pop(key) for key in _SERVER_DEFAULT_KEYS if key in raw}
     tables, legacy = raw.pop("mail_servers", None), raw.pop("mail_host", None)
     if tables is not None and legacy is not None:
         raise ValueError("set either mail_host or [[mail_servers]], not both")
     if legacy is not None:
-        return (MailServer(host=legacy, imap_port=imap_port, smtp_port=smtp_port, domains=("*",), match_mx=False),)
+        return (MailServer(host=legacy, domains=("*",), match_mx=False, **defaults),)
     if not tables:
         raise ValueError("no mail server configured: add [[mail_servers]] (or the legacy mail_host)")
     if not isinstance(tables, list) or not all(isinstance(t, dict) for t in tables):
@@ -175,8 +196,7 @@ def _mail_servers(raw: dict) -> tuple[MailServer, ...]:
                              + (f"unknown key(s) {sorted(unknown)}" if unknown else "host is required"))
         if not isinstance(table.get("domains", []), list):
             raise ValueError(f"[[mail_servers]] entry {table['host']!r}: domains must be a list")
-        servers.append(MailServer(**{"imap_port": imap_port, "smtp_port": smtp_port, **table,
-                                     "domains": tuple(table.get("domains", ()))}))
+        servers.append(MailServer(**{**defaults, **table, "domains": tuple(table.get("domains", ()))}))
     hosts = [s.host for s in servers]
     if len(set(hosts)) != len(hosts):
         raise ValueError("each [[mail_servers]] host may appear only once")

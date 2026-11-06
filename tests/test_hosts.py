@@ -81,3 +81,39 @@ def test_default_context_factory_requires_verification():
     ctx = ssl.create_default_context()
     assert ctx.verify_mode == ssl.CERT_REQUIRED
     assert ctx.check_hostname is True
+
+
+# STARTTLS (ticket 09): the security mode per service, and the ports that follow from it
+
+def test_security_defaults_to_implicit_tls_on_the_usual_ports():
+    s = MailServer("mail1.hosting.example")
+    assert (s.imap_security, s.smtp_security, s.imap_port, s.smtp_port) == ("tls", "tls", 993, 465)
+
+
+def test_starttls_ports_follow_the_mode_when_no_port_is_set():
+    s = MailServer("mail1.hosting.example", imap_security="starttls", smtp_security="starttls")
+    assert (s.imap_port, s.smtp_port) == (143, 587)
+    assert MailServer("mail1.hosting.example", smtp_security="starttls", smtp_port=2587).smtp_port == 2587
+
+
+@pytest.mark.parametrize("kw", [{"smtp_security": "none"}, {"smtp_security": "plain"}, {"imap_security": "ssl"},
+                                {"imap_security": "STARTTLS"}, {"smtp_security": ""}, {"imap_security": True},
+                                {"smtp_security": "opportunistic"}])
+def test_security_accepts_only_tls_or_starttls(kw):
+    with pytest.raises(ValueError, match="no cleartext"):
+        MailServer("mail1.hosting.example", **kw)
+
+
+def test_ehlo_name_is_not_part_of_the_servers_identity():
+    assert MailServer("mail1.hosting.example", ehlo_name="mcp.example.test") == MailServer("mail1.hosting.example")
+
+
+@pytest.mark.parametrize("name", ["Bad Name", "a..b", "-x.example", "x.example."])
+def test_ehlo_name_must_be_a_dns_name_or_address_literal(name):
+    with pytest.raises(ValueError, match="ehlo_name"):
+        MailServer("mail1.hosting.example", ehlo_name=name)
+
+
+@pytest.mark.parametrize("name", ["mcp.example.test", "[192.0.2.1]", "[IPv6:2001:db8::1]"])
+def test_ehlo_name_accepts_names_and_address_literals(name):
+    assert MailServer("mail1.hosting.example", ehlo_name=name).ehlo_name == name

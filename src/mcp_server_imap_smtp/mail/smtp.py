@@ -1,17 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""SMTPS submission with the mailbox's own credentials, over a Connector-verified socket."""
+"""SMTP submission with the mailbox's own credentials, over a Connector-verified socket: implicit TLS (SMTPS,
+465) or STARTTLS (submission, 587), per the server's smtp_security."""
 from __future__ import annotations
 
 import base64
 import copy
 import re
 import smtplib
+import ssl
 from email import encoders
 from email.message import EmailMessage
 from email.utils import parseaddr
 
 from .compose import envelope_recipients, too_large, wire_size
-from .hosts import Connector, MailServer
+from .hosts import Connector, MailServer, StartTLSRefused, address_literal, reader_buffered
 from .imap import MailAuthError, MailError, limit_value
 from .resolve import normalise_address
 
@@ -67,7 +69,45 @@ def _shutdown(s: _SMTP | None, sock) -> None:
     except Exception:
         pass
     finally:
+        if s is not None and s.sock is not None:
+            s.sock.close()        # the TLS socket after STARTTLS; quit() leaves it open when QUIT fails
         sock.close()
+
+
+def _ehlo_name(server: MailServer, sock) -> str:
+    """The configured EHLO name, else the address literal of this end of the connection: never
+    socket.getfqdn(), which would leak this machine's own name or make one up."""
+    if server.ehlo_name:
+        return server.ehlo_name
+    try:
+        return address_literal(sock.getsockname()[0])
+    except (OSError, ValueError, IndexError):
+        return "[127.0.0.1]"
+
+
+class _Cleartext(Exception):
+    """A STARTTLS refusal on which a cleartext QUIT is still safe (the server simply does not offer it)."""
+
+
+def _starttls(s: _SMTP, connector: Connector, port: int) -> None:
+    """RFC 3207 on a plain connection whose greeting has been read: EHLO, require STARTTLS, upgrade with the
+    verified context, forget everything learnt before TLS and EHLO again. Nothing but EHLO, STARTTLS and
+    (on a refusal) QUIT is ever sent in cleartext."""
+    code, _ = s.ehlo()
+    if code != 250 or not s.has_extn("starttls"):
+        raise _Cleartext(f"the mail server does not offer STARTTLS on port {port}; set smtp_security = \"tls\" "
+                         "if it speaks TLS from the start (usually port 465)")
+    code, _ = s.docmd("STARTTLS")
+    if code != 220:
+        raise _Cleartext(f"the mail server refused STARTTLS ({code})")
+    s.sock = connector.starttls(s.sock, buffered=reader_buffered(s.file))
+    # As smtplib's own starttls(): the old reader and every EHLO answer from before TLS are discarded.
+    s.file = None
+    s.helo_resp = s.ehlo_resp = None
+    s.esmtp_features = {}
+    s.does_esmtp = False
+    s.ehlo()
+
 
 
 _ENHANCED = re.compile(r"\s*([245]\.\d{1,3}\.\d{1,3})\b")
@@ -129,10 +169,10 @@ def size_limit(s: smtplib.SMTP) -> int | None:
 
 def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc=(),
          local_hostname: str | None = None) -> list[str]:
-    """Send msg as the mailbox through server (port server.smtp_port); returns the recipients the
-    server accepted (To, Cc and bcc).
+    """Send msg as the mailbox through server (port server.smtp_port, implicit TLS or STARTTLS per
+    server.smtp_security); returns the recipients the server accepted (To, Cc and bcc).
 
-    local_hostname is the EHLO name; None lets smtplib work it out with getfqdn()."""
+    local_hostname is the EHLO name; None takes server.ehlo_name (see _ehlo_name)."""
     rcpts = envelope_recipients(msg, bcc)  # validated before any connection is made
     # Decided outside any except block, so no exception that mentions the password can end up
     # as __context__ of the error we raise.
@@ -147,15 +187,20 @@ def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc
     address, _ = normalise_address(address)
     if parseaddr(str(msg.get("From", "")))[1].lower() != address:
         raise MailError("From must be the signed-in mailbox")
-    sock = Connector(server).tls_connect(server.smtp_port)
+    connector = Connector(server)
+    starttls = server.smtp_security == "starttls"
+    sock = (connector.plain_connect if starttls else connector.tls_connect)(server.smtp_port)
     s = None
     try:
         sock.settimeout(30)
-        s = _SMTP(sock, local_hostname)
+        s = _SMTP(sock, local_hostname or _ehlo_name(server, sock))
         code, _ = s.connect(server.host, server.smtp_port)
         if code != 220:
             raise MailError(f"SMTP greeting {code}")
-        s.ehlo()
+        if starttls:
+            _starttls(s, connector, server.smtp_port)
+        else:
+            s.ehlo()
         wire, options = _for_server(s, msg, [address, *rcpts])
         limit = size_limit(s)
         size = wire_size(wire) if limit is not None else 0
@@ -164,12 +209,20 @@ def send(server: MailServer, address: str, password: str, msg: EmailMessage, bcc
         _login(s, address, password)
         refused = s.send_message(wire, from_addr=address, to_addrs=rcpts, mail_options=options)
         return [r for r in rcpts if r not in refused]
+    except _Cleartext as exc:
+        raise MailError(str(exc)) from None
+    except StartTLSRefused as exc:
+        s = None                  # nothing more is said on a connection someone may be tampering with
+        raise MailError(f"STARTTLS refused: {exc}") from None
     except smtplib.SMTPRecipientsRefused as exc:
         raise MailError("mail server refused every recipient") from exc
     except smtplib.SMTPResponseException as exc:
         raise MailError(refusal(exc.smtp_code, exc.smtp_error)) from exc
     except smtplib.SMTPException as exc:
         raise MailError(f"SMTP failed ({exc.__class__.__name__})") from exc
+    except ssl.SSLCertVerificationError:
+        s = None
+        raise                     # as from tls_connect: the caller tells the operator the certificate is not trusted
     except OSError as exc:
         raise MailError("mail server connection failed") from exc
     finally:

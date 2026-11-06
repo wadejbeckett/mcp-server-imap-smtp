@@ -223,3 +223,44 @@ def test_mailbox_and_sending_limits_load_from_toml(tmp_path):
 def test_mailbox_and_sending_limits_must_be_whole_numbers(tmp_path, line):
     with pytest.raises(ValueError, match="whole number"):
         load(tmp_path, HEAD + line + '\nmail_host = "mail1.hosting.example"\n')
+
+
+# STARTTLS and the EHLO name (ticket 09)
+
+def test_security_modes_per_server_and_their_default_ports(tmp_path):
+    s = load(tmp_path, HEAD + '[[mail_servers]]\nhost = "mail1.hosting.example"\n'
+             '[[mail_servers]]\nhost = "mail.client.example"\nimap_security = "starttls"\nsmtp_security = "starttls"\n')
+    mail1, isp = s.mail_servers
+    assert (mail1.imap_security, mail1.smtp_security, mail1.imap_port, mail1.smtp_port) == ("tls", "tls", 993, 465)
+    assert (isp.imap_security, isp.smtp_security, isp.imap_port, isp.smtp_port) == ("starttls", "starttls", 143, 587)
+
+
+def test_legacy_mail_host_takes_top_level_security(tmp_path):
+    s = load(tmp_path, 'smtp_security = "starttls"\n' + BASE)
+    assert (s.mail_servers[0].smtp_security, s.mail_servers[0].smtp_port) == ("starttls", 587)
+
+
+@pytest.mark.parametrize("line", ['smtp_security = "none"', 'imap_security = "plain"', 'smtp_security = "STARTTLS"'])
+def test_unknown_security_mode_stops_start_up(tmp_path, line):
+    with pytest.raises(ValueError, match='"tls" or "starttls"'):
+        load(tmp_path, HEAD + f'[[mail_servers]]\nhost = "mail1.hosting.example"\n{line}\n')
+
+
+def test_ehlo_name_defaults_to_the_public_host_name(tmp_path):
+    s = load(tmp_path, BASE.replace("http://127.0.0.1:8765", "https://mcp.example.test"))
+    assert s.mail_servers[0].ehlo_name == "mcp.example.test"
+
+
+def test_ehlo_name_from_an_ip_issuer_is_an_address_literal(tmp_path):
+    assert load(tmp_path, BASE).mail_servers[0].ehlo_name == "[127.0.0.1]"
+
+
+def test_ehlo_name_setting_wins_and_a_server_may_override_it(tmp_path):
+    s = load(tmp_path, 'ehlo_name = "relay.example.test"\n' + HEAD + SERVERS.replace(
+        "imap_port = 1993", 'imap_port = 1993\nehlo_name = "client-side.example.test"'))
+    assert [m.ehlo_name for m in s.mail_servers] == ["relay.example.test", "client-side.example.test"]
+
+
+def test_bad_ehlo_name_stops_start_up(tmp_path):
+    with pytest.raises(ValueError, match="ehlo_name"):
+        load(tmp_path, 'ehlo_name = "not a name"\n' + BASE)

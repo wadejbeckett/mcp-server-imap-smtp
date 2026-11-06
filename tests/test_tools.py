@@ -1043,6 +1043,30 @@ async def test_ports_come_from_the_current_configuration_not_the_seal(tmp_path, 
 
 
 @pytest.mark.anyio
+async def test_security_modes_come_from_the_current_configuration(tmp_path, monkeypatch):
+    """Every tool path (one mailbox, mailbox="*", sending) opens the server as configured now: STARTTLS when
+    the operator set it, whatever the seal recorded at sign-in (ticket 09)."""
+    sealed = MailServer("mail.client.example")
+    now = MailServer("mail.client.example", imap_security="starttls", smtp_security="starttls",
+                     domains=("client.example",), match_mx=False)
+    env = _grant_on(tmp_path, monkeypatch, sealed, (MAIL1, now))
+    s, store, _ = env
+    srv, servers = MCPServer("t"), []
+    sender = FakeSender()
+
+    def opener(server, address, password):
+        servers.append(server)
+        return FakeImap()
+    tools_mod.register_mail_tools(srv, store, s, opener=opener, sender=sender)
+    await srv.call_tool("mail_search", {})
+    await srv.call_tool("mail_search", {"mailbox": "*"})
+    await srv.call_tool("mail_send", {"to": ["c@y.co.za"], "subject": "s", "text": "t"})
+    assert servers and {(m.imap_security, m.imap_port) for m in servers} == {("starttls", 143)}
+    assert (sender.sent[0]["server"].smtp_security, sender.sent[0]["port"]) == ("starttls", 587)
+    assert sender.sent[0]["server"].ehlo_name == "[127.0.0.1]"     # from the issuer URL, never getfqdn()
+
+
+@pytest.mark.anyio
 async def test_legacy_row_with_several_servers_and_no_legacy_host_must_reconnect(tmp_path, monkeypatch):
     isp = MailServer("mail.client.example", domains=("client.example",), match_mx=False)
     env = _grant_on(tmp_path, monkeypatch, MAIL1, (MAIL1, isp), legacy_row=True)
