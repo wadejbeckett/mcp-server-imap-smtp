@@ -29,10 +29,11 @@ command -v python3 >/dev/null || die "python3 not found"
 
 version="$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["version"])' "$project/pyproject.toml")"
 sha="$(git -C "$project" rev-parse --short=12 HEAD 2>/dev/null || echo nogit)"
-# deploy/ ships in the bundle too, so it counts (deploy/dist/ is git-ignored and does not).
-if [[ -n "$(git -C "$project" status --porcelain -- src pyproject.toml deploy 2>/dev/null)" ]]; then
+# deploy/ ships in the bundle too, so it counts (deploy/dist/ is git-ignored and does not), and so do README.md
+# and LICENSE, which go into the wheel.
+if [[ -n "$(git -C "$project" status --porcelain -- src pyproject.toml README.md LICENSE deploy 2>/dev/null)" ]]; then
     sha="$sha-dirty"
-    printf 'build.sh: WARNING: src/, pyproject.toml or deploy/ has uncommitted changes; release is marked -dirty.\n' >&2
+    printf 'build.sh: WARNING: src/, pyproject.toml, README.md, LICENSE or deploy/ has uncommitted changes; release is marked -dirty.\n' >&2
     printf 'build.sh: commit them before a production build so the bundle can be rebuilt from its git id.\n' >&2
 fi
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"

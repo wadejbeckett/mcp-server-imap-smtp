@@ -259,3 +259,10 @@ def test_bundle_wheel_is_built_with_the_licence_and_readme():
     wheel_step = build.split("# 1. Wheel", 1)[1].split("# 2.", 1)[0]
     assert 'cp "$project/pyproject.toml" "$project/README.md" "$project/LICENSE" "$work/src/"' in wheel_step
     assert "licenses/LICENSE" in wheel_step          # and checks the wheel really carries it
+
+
+def test_build_marks_a_release_dirty_when_the_readme_or_licence_changed():
+    """README.md and LICENSE go into the bundled wheel, so an uncommitted change to either must mark the release
+    -dirty; otherwise rebuilding from the git id in BUILD_INFO would not give back the shipped bundle."""
+    build = (DEPLOY / "build.sh").read_text()
+    assert "status --porcelain -- src pyproject.toml README.md LICENSE deploy" in build
