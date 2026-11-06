@@ -139,14 +139,17 @@ def _check_attachments(items: list[Attachment] | None) -> list[Attachment]:
     return items
 
 
-_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
+# A plain character-class repeat with a length check: the same strings as b64decode(validate=True) accepts.
+# A group repeat such as (?:[A-Za-z0-9+/]{4})* keeps state per iteration in the regex engine, about 28 times
+# the text's size in memory, enough for one large attachment to exhaust the service.
+_BASE64 = re.compile(r"[A-Za-z0-9+/]*={0,2}")
 
 
 def _base64_text(n: int, a: Attachment) -> str:
     """The attachment's base64 without whitespace, checked as b64decode(validate=True) would check it but
     without decoding it; raises ToolError."""
     text = "".join(a.base64.split())
-    if not _BASE64.fullmatch(text):
+    if len(text) % 4 or not _BASE64.fullmatch(text):
         raise ToolError(f"attachment {n} ({a.filename}): base64 is not valid")
     return text
 

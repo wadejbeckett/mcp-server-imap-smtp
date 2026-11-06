@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import base64
 import copy
+import io
 import re
 import smtplib
 import ssl
 from email import encoders, policy
+from email.generator import BytesGenerator
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.utils import parseaddr
@@ -168,6 +170,25 @@ def _for_server(s: smtplib.SMTP, msg: EmailMessage, envelope: list[str]) -> tupl
     return wire, []
 
 
+def _flatten(s: smtplib.SMTP, msg: EmailMessage, envelope: list[str], options: list[str]) -> tuple[bytes, list[str]]:
+    """The message's bytes for DATA and the MAIL FROM parameters, as smtplib.send_message makes them (Bcc and
+    Resent-Bcc left out; SMTPUTF8 and BODY=8BITMIME with a UTF-8 policy for a non-ASCII envelope) but without
+    its ">From " escaping: send_message flattens with no policy, which turns on mangle_from_ and would rewrite
+    a line starting "From " inside an attached original, so it no longer matched its DKIM body hash."""
+    out = copy.copy(msg)
+    del out["Bcc"]
+    del out["Resent-Bcc"]
+    out_policy = msg.policy.clone(linesep="\r\n")
+    if not "".join(envelope).isascii():
+        if not s.has_extn("smtputf8"):
+            raise smtplib.SMTPNotSupportedError("the mail server does not offer SMTPUTF8")
+        out_policy = out_policy.clone(utf8=True)
+        options = [*options, "SMTPUTF8", "BODY=8BITMIME"]
+    buf = io.BytesIO()
+    BytesGenerator(buf, mangle_from_=False, policy=out_policy).flatten(out)
+    return buf.getvalue(), options
+
+
 def size_limit(s: smtplib.SMTP) -> int | None:
     """The SIZE the server announced in EHLO (RFC 1870), or None: no SIZE, SIZE without a number, or 0 (which
     RFC 1870 s4 defines as no fixed limit)."""
@@ -232,8 +253,9 @@ def _send(server: MailServer, address: str, password: str, msg: EmailMessage, bc
         if limit is not None and size > limit:      # refused before AUTH and before MAIL FROM
             raise MailError(too_large(size, limit, "the mail server (SMTP SIZE)"))
         _login(s, address, password)
-        started.append(True)        # send_message starts with MAIL FROM
-        refused = s.send_message(wire, from_addr=address, to_addrs=rcpts, mail_options=options)
+        started.append(True)        # sendmail starts with MAIL FROM
+        data, options = _flatten(s, wire, [address, *rcpts], options)
+        refused = s.sendmail(address, rcpts, data, mail_options=options)
         return [r for r in rcpts if r not in refused]
     except _Cleartext as exc:
         raise MailError(str(exc)) from None

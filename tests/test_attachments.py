@@ -935,3 +935,46 @@ async def test_a_hundred_references_to_a_large_part_allocate_no_copies(env):
     finally:
         tracemalloc.stop()
     assert peak < 40_000_000
+
+
+# --- second review of the fixes -------------------------------------------------------------------------
+
+FROM_LINE_ORIGINAL = LONG_ORIGINAL + b"From now on we meet on Mondays.\r\n"
+
+
+def test_mail_send_carries_an_original_with_from_lines_octet_for_octet(wire):
+    """smtplib's own flattening escapes a body line starting "From " as ">From ", which would change the
+    attached original and break its DKIM body hash; the wire bytes must hold it unchanged."""
+    client, server, ms = wire()
+    smtp.send(ms, ADDR, SECRET, compose.forward(FROM_LINE_ORIGINAL, ADDR, ["a@b.co"], "From me, see below"))
+    server.join(timeout=5)
+    assert FROM_LINE_ORIGINAL in server.data and b">From " not in server.data
+    assert server.mail_from.upper().count("BODY=8BITMIME") == 1
+
+
+def test_an_international_envelope_also_carries_the_original_unchanged(wire):
+    client, server, ms = wire(extensions="8BITMIME SMTPUTF8")
+    smtp.send(ms, ADDR, SECRET, compose.forward(FROM_LINE_ORIGINAL, ADDR, ["josé@b.co"], "FYI"),
+              bcc=["hidden@b.co"])
+    server.join(timeout=5)
+    assert FROM_LINE_ORIGINAL in server.data and b">From " not in server.data
+    assert "SMTPUTF8" in server.mail_from.upper() and server.mail_from.upper().count("BODY=8BITMIME") == 1
+    assert b"hidden@b.co" not in server.data and "hidden@b.co" in server.rcpts
+
+
+def test_a_large_base64_attachment_is_checked_in_constant_extra_memory():
+    import tracemalloc
+    a = tools_mod.Attachment(filename="a.bin", base64=b64(b"x" * 3_000_000))     # 4 MB of base64
+    tracemalloc.start()
+    try:
+        tools_mod._base64_text(1, a)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 20_000_000
+
+
+@pytest.mark.parametrize("text", ["A===", "AB=C", "ABC", "=AAA", "AA==AA==", "AB!=", "A"])
+def test_malformed_base64_is_still_refused(text):
+    with pytest.raises(ToolError, match="base64 is not valid"):
+        tools_mod._decoded(1, tools_mod.Attachment(filename="a.bin", base64=text))

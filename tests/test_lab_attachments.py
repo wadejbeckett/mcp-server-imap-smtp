@@ -79,14 +79,15 @@ def test_append_limit_is_read_from_the_server(lab_ca, profile):
 
 
 def _original(tag: str) -> bytes:
-    """A received message with a DKIM-Signature b= value far past 78 characters and an 8-bit body: what a
-    forward as attachment must carry octet for octet (review after merge, item 3)."""
+    """A received message with a DKIM-Signature b= value far past 78 characters, an 8-bit body and a body line
+    starting "From " (which mbox-style flattening would escape): what a forward as attachment must carry octet
+    for octet (review after merge, item 3)."""
     return (b"DKIM-Signature: v=1; a=rsa-sha256; d=example.org; s=sel; h=from:to:subject; bh=abc=; b="
             + b"A1b2C3d4E5f6G7h8" * 22 + b"\r\n"
             b"From: Cust <c@example.org>\r\nTo: alice@example.test\r\nSubject: " + tag.encode() + b"\r\n"
             b"Message-ID: <" + tag.encode() + b"@example.org>\r\nDate: Mon, 05 Oct 2026 10:00:00 +0200\r\n"
             b"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n"
-            b"\r\n" + "Grüße, ein 8-Bit-Text.\r\n".encode())
+            b"\r\n" + "Grüße, ein 8-Bit-Text.\r\n".encode() + b"From now on we meet on Mondays.\r\n")
 
 
 @pytest.mark.parametrize("profile", PROFILES, ids=lambda p: p.name)
