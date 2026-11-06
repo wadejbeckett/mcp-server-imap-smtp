@@ -238,3 +238,12 @@ def test_certbot_failure_names_the_way_without_a_public_name():
     install = (DEPLOY / "install.sh").read_text()
     failure = install.split("certbot certonly", 1)[1].split("\nfi\n", 1)[0]
     assert "TLS_CERT" in failure and "Cloudflare" not in failure
+
+
+def test_bundle_wheel_is_built_with_the_licence_and_readme():
+    """build.sh builds the wheel from a clean copy; without LICENSE and README.md in it the shipped wheel had
+    no licence file and no description (found by the ticket 76 package check)."""
+    build = (DEPLOY / "build.sh").read_text()
+    wheel_step = build.split("# 1. Wheel", 1)[1].split("# 2.", 1)[0]
+    assert 'cp "$project/pyproject.toml" "$project/README.md" "$project/LICENSE" "$work/src/"' in wheel_step
+    assert "licenses/LICENSE" in wheel_step          # and checks the wheel really carries it

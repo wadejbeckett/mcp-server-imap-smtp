@@ -35,7 +35,7 @@ Nothing has been tagged or published yet. `pyproject.toml` says 0.1.0; every cha
 
 - Many defects found in reviews and in the lab: MIME structure and encodings of composed mail, IDNA 2008 addresses, servers without NAMESPACE, malformed or unclosed hidden HTML, quotes cut from what the AI was shown, and send slots given back when a message is refused before MAIL FROM.
 - `install.sh` reads `/etc/os-release` without overwriting the install name.
-- `build.sh` quotes the bundle path in the commands it prints.
+- `build.sh` quotes the bundle path in the commands it prints, and the wheel it bundles carries the licence file and the README.
 
 ### Security
 

@@ -47,13 +47,16 @@ mkdir -p "$out"
 
 # 1. Wheel, built from a clean copy so setuptools leaves no build/ or egg-info in the tree.
 mkdir -p "$work/src"
-cp "$project/pyproject.toml" "$work/src/"
+cp "$project/pyproject.toml" "$project/README.md" "$project/LICENSE" "$work/src/"   # metadata names both
 cp -r "$project/src" "$work/src/src"
 find "$work/src" \( -name '__pycache__' -o -name '*.egg-info' \) -prune -exec rm -rf {} +
 uv build --quiet --wheel --out-dir "$out" "$work/src"
 rm -f "$out/.gitignore"   # uv build drops one into the out dir
 wheel="$(cd "$out" && ls mcp_server_imap_smtp-*.whl)"
 [[ "$(wc -w <<<"$wheel")" -eq 1 ]] || die "expected exactly one wheel, got: $wheel"
+python3 -c 'import sys, zipfile; names = zipfile.ZipFile(sys.argv[1]).namelist()
+sys.exit(not any(n.endswith(".dist-info/licenses/LICENSE") for n in names))' "$out/$wheel" \
+    || die "the wheel carries no licenses/LICENSE"
 
 # 2. requirements.lock: runtime dependencies from pyproject.toml, constrained to the exact
 #    versions in .venv.
