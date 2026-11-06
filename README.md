@@ -1,5 +1,7 @@
 # mcp-server-imap-smtp
 
+[![CI](https://github.com/wadejbeckett/mcp-server-imap-smtp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/wadejbeckett/mcp-server-imap-smtp/actions/workflows/ci.yml)
+
 A remote MCP server that lets AI apps work with email in IMAP and SMTP mailboxes. Once a user connects it, their AI app can search, read, summarise, flag, file, draft and send mail, and open attachments.
 
 It is built for anyone who runs mail servers for other people, such as a hosting company, an IT provider or a business with its own mail server, and for individuals who run their own. You run one copy on a public HTTPS address and bind it to your own mail servers. Each user adds that address to their AI app and signs in with their own mailbox address and password.

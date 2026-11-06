@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Unit suite on every supported Python, the container lab once, and the deploy kit's scripts and package build.
+# Integration tests need a real mailbox and its password, so they never run here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Pull requests from forks run untrusted code: the token reads only, and no step uses a secret.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false    # one Python's failure must not hide another's
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ matrix.python }}
+      # --locked fails the run when uv.lock no longer matches pyproject.toml.
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync pytest -q
+
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked --extra dev
+      - run: scripts/lab.sh up
+      - run: uv run --no-sync pytest -q -m lab
+      - name: Lab container logs
+        if: failure()
+        run: |
+          for id in $(docker ps -aq --filter label=mcp-imap-smtp-lab=1); do
+            echo "::group::$(docker inspect -f '{{.Name}}' "$id")"
+            docker logs "$id" 2>&1 || true
+            echo "::endgroup::"
+          done
+      - name: Lab down
+        if: always()
+        run: scripts/lab.sh down
+
+  kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.11"    # the oldest supported Python: e2e.py runs on operators' machines
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck deploy/*.sh scripts/*.sh lab/*.sh
+      - name: e2e.py compiles
+        run: uv run --no-project python -m py_compile deploy/e2e.py
+      - name: Wheel and sdist build
+        run: uv build --out-dir dist
