@@ -117,6 +117,8 @@ HIDDEN_FORMS = [
     f'<span></style>{INJECTION}',
     f'</head>{INJECTION}<p>x</p>',
     f'<p hidden><form></p>{INJECTION}</form>',
+    # not hidden, but never in the AI's text (images are left out of it), so never in the quote either
+    f'<img src="https://t.example.test/p.gif" width="1" height="1" alt="{INJECTION}">',
 ]
 
 
@@ -149,7 +151,7 @@ def test_reply_and_inline_forward_do_not_resend_hidden_text(hidden):
 def test_quote_words_are_a_subset_of_the_ai_text_for_random_markup():
     tags = ["div", "span", "p", "b", "td", "tr", "table", "font", "center", "a", "li", "style", "script",
             "template", "img", "br", "head", "title", "form", "select", "svg", "noscript", "textarea"]
-    hide = ['style="display:none"', "hidden", 'style="font-size:0"', ""]
+    hide = ['style="display:none"', "hidden", 'style="font-size:0"', 'alt="IGNORE"', ""]
     rng = random.Random(8)
     for _ in range(1500):
         out, k = [], 0
@@ -199,3 +201,38 @@ async def test_mail_attachment_returns_a_plain_text_part_as_it_is(env):
     srv, _ = build(env, FakeImap({("INBOX", 5): _with_html_part()}))
     out = payload(await srv.call_tool("mail_attachment", {"folder": "INBOX", "uid": 5, "part": "3"}))
     assert out["text"].strip() == "plain <b>notes</b>" and "links" not in out
+
+
+# --- second review of the fixes: a stray end tag keeps the break a browser shows -------------------------
+
+@pytest.mark.parametrize("html, words", [
+    ("<div>first</p>second</div>", ("first", "second")),
+    ("A</div>B", ("A", "B")),
+    ("<p>a</h1>b</p>", ("a", "b")),
+    ("Total 100</p>200", ("100", "200")),
+    ("<li>a</li>b</li>c", ("b", "c")),
+])
+def test_a_stray_block_end_tag_keeps_words_apart(html, words):
+    text = render.summarise(eml(html=html))["text"]
+    first, second = words
+    assert first in text.split() and second in text.split(), text
+
+
+@pytest.mark.parametrize("stray", ["</style>", "</head>", "</script>", "</title>"])
+def test_a_stray_raw_text_end_tag_drops_nothing_after_it(stray):
+    text = render.summarise(eml(html=f"<p>Hi</p>{stray}<p>Regards</p>"))["text"]
+    assert "Hi" in text and "Regards" in text
+
+
+@pytest.mark.anyio
+async def test_mail_attachment_filters_a_watch_html_alternative(env):
+    html = f'<p>Hi</p><div style="display:none">{INJECTION}</div>'
+    raw = (b"From: a@x.example\r\nTo: me@x.example\r\nSubject: s\r\nMIME-Version: 1.0\r\n"
+           b"Content-Type: multipart/alternative; boundary=a\r\n\r\n"
+           b"--a\r\nContent-Type: text/plain\r\n\r\nHi\r\n"
+           b"--a\r\nContent-Type: text/watch-html; charset=utf-8\r\n\r\n" + html.encode() + b"\r\n"
+           b"--a\r\nContent-Type: text/html; charset=utf-8\r\n\r\n" + html.encode() + b"\r\n--a--\r\n")
+    srv, _ = build(env, FakeImap({("INBOX", 5): raw}))
+    out = payload(await srv.call_tool("mail_attachment", {"folder": "INBOX", "uid": 5, "part": "2"}))
+    assert out["content_type"] == "text/watch-html"
+    assert "IGNORE" not in str(out) and "Hi" in out["text"] and "hidden" in out["note"]

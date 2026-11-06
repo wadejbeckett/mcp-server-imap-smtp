@@ -58,11 +58,16 @@ def _colour(value: str) -> str:
     return v
 
 
+# End tags dropped when nothing opened them: the HTML converter counts these elements, and an unmatched end
+# would make it leave out the visible text after it.
+_STRAY_DROP = frozenset("head style script title template textarea noscript".split())
+
+
 class _Visible(HTMLParser):
     """Re-emits the HTML without hidden elements, comments and link targets; link targets are collected.
     keep_links=True keeps a link's http, https or mailto target on its <a> (for a quote, D9), still listing
-    it. An end tag is emitted only for an element it opened, so a stray </style> cannot make the HTML
-    converter drop the text after it."""
+    it. A stray end tag in _STRAY_DROP (</style>, </head>...) is left out, so it cannot make the HTML converter
+    drop the text after it."""
 
     def __init__(self, keep_links: bool = False):
         super().__init__(convert_charrefs=True)
@@ -121,6 +126,10 @@ class _Visible(HTMLParser):
                 self.out.append(f"</{t}>")
                 if t == tag:
                     break
+        elif tag not in _STRAY_DROP:
+            # A stray end tag still breaks the line as a browser shows it (a stray </p> is an empty paragraph),
+            # so words on either side stay apart in the text.
+            self.out.append(f"</{tag}>")
 
     def handle_data(self, data):
         if not self.hiding:
@@ -147,7 +156,12 @@ def _html_to_text(html: str, links: list[str] | None = None) -> str:
     return h.handle(visible)
 
 
-HTML_TYPES = ("text/html", "text/x-amp-html")
+HTML_TYPES = ("text/html", "text/x-amp-html", "text/watch-html")
+
+
+def is_html(content_type: str) -> bool:
+    """True for a text part that is HTML of any kind (text/html, AMP, the Apple Watch alternative...)."""
+    return content_type in HTML_TYPES or (content_type.startswith("text/") and content_type.endswith("html"))
 
 
 def visible_text(html: str) -> tuple[str, list[str]]:
@@ -508,7 +522,8 @@ def find_part(raw: bytes | EmailMessage, index: int | None = None, part: str | N
 
 
 # Quoting an original in an outgoing reply or inline forward (D9). Only plain formatting survives: no scripts,
-# styles, forms, images (a remote image would be fetched by every reader, a cid: image would point at nothing)
+# styles, forms, images (a remote image would be fetched by every reader, a cid: image would point at nothing;
+# their alt text is left out too, as it is from the AI's text)
 # or attributes other than a link's http, https or mailto target. It runs over the output of the same
 # visibility pass that makes the AI's text (_Visible), so hidden elements are gone before it starts and the
 # quote shows the reader no more than the AI saw (review after merge, item 2).
@@ -536,11 +551,6 @@ class _Quotable(HTMLParser):
             if tag not in _VOID:
                 self.dropping.append(tag)
                 self.dropped_at = len(self.open)
-            return
-        if tag == "img":
-            alt = (named.get("alt") or "").strip()
-            if alt:
-                self.out.append(html_lib.escape(f"[{alt}]", quote=False))
             return
         if tag not in _QUOTE_TAGS:
             return

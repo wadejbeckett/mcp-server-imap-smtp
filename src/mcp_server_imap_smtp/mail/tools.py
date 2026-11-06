@@ -853,7 +853,7 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
                     text = data.decode(charset or "utf-8", errors="replace")
                 except LookupError:      # a charset Python does not know
                     text = data.decode("utf-8", errors="replace")
-                if ctype in render.HTML_TYPES:
+                if render.is_html(ctype):
                     # Through the same visibility pass as mail_read (review after merge, item 4): an HTML body
                     # part fetched by part id must not hand the AI the hidden text mail_read left out.
                     text, links = render.visible_text(text)

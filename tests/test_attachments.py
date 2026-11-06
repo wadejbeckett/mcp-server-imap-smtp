@@ -162,7 +162,8 @@ def test_html_reply_quotes_the_sanitised_original_d9():
     for gone in ("alert(1)", "IGNORE PREVIOUS", "javascript:", "onclick", "style=", "tracker.example", "cid:x@y",
                  "p{}"):
         assert gone not in html, gone
-    assert '<a href="https://ok.example/">ok</a>' in html and "[logo]" in html
+    assert '<a href="https://ok.example/">ok</a>' in html
+    assert "logo" not in html       # image alt text is not in the AI's text, so not in the quote (item 2)
     assert "wrote:" in html
 
 
