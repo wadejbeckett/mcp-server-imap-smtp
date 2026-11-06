@@ -33,21 +33,46 @@ def uses_secrets(text: str) -> bool:
     return any(re.search(r"\bsecrets\b", line) for line in uncommented_lines(text))
 
 
+def shell_lines(text: str) -> list[str]:
+    """uncommented_lines with each backslash-continued line joined to the next, as the shell reads them, so the
+    arguments of one pytest call are checked together."""
+    joined, pending = [], ""
+    for line in uncommented_lines(text):
+        if line.rstrip().endswith("\\"):
+            pending += line.rstrip()[:-1] + " "
+            continue
+        joined.append(pending + line)
+        pending = ""
+    return joined + [pending] if pending else joined
+
+
+def selects_more_than_lab(args: list[str]) -> bool:
+    for i, arg in enumerate(args):
+        if re.match(r"--(override-ini|config-file|rootdir)\b", arg):
+            return True
+        # Short flags bundle (-qo, -qm), with the last one taking a value, so look at every letter in the token.
+        if re.match(r"-[^-]", arg) and set(arg[1:]) & set("ocpm"):
+            if arg == "-mlab" or (arg == "-m" and args[i + 1:i + 2] == ["lab"]):
+                continue
+            return True
+    return False
+
+
 def runs_integration_tests(text: str) -> bool:
     """pyproject's addopts deselect the integration tests, and a later -m or ini override on the command line
     replaces that, so each pytest call may add only `-m lab`."""
     if "PYTEST_ADDOPTS" in text:
         return True
-    for line in uncommented_lines(text):
+    for line in shell_lines(text):
         if "integration" in line or "MCP_TEST_" in line:
             return True
         for call in re.findall(r"\bpytest\b(.*)", line):
-            args = shlex.split(call.split("&&")[0].split(";")[0].split("|")[0])
-            for i, arg in enumerate(args):
-                if re.match(r"-(o|c|p)|--(override-ini|config-file|rootdir)\b", arg):
-                    return True
-                if arg.startswith("-m") and (arg[2:] or (args[i + 1] if i + 1 < len(args) else "")) != "lab":
-                    return True
+            try:
+                args = shlex.split(call.split("&&")[0].split(";")[0].split("|")[0])
+            except ValueError:
+                return True     # a call the check cannot read is one it cannot vouch for
+            if selects_more_than_lab(args):
+                return True
     return False
 
 
@@ -120,7 +145,8 @@ def test_checkout_does_not_keep_the_token():
 def test_integration_tests_never_run_in_ci():
     # They need a real mailbox and its password; CI has neither and must not be given them.
     for path in workflows():
-        assert not runs_integration_tests(path.read_text()), path.name
+        assert not runs_integration_tests(path.read_text()), (
+            f"{path.name}: a pytest call selects more than the default or `-m lab` tests, or cannot be parsed")
 
 
 @pytest.mark.parametrize("line", [
@@ -128,6 +154,7 @@ def test_integration_tests_never_run_in_ci():
     "      - run: uv run --no-sync pytest -q -m lab",
     "      - run: uv run --no-sync pytest -q -m 'lab'",
     "      - run: uv run --no-sync pytest -q -mlab && echo done",
+    "        run: |\n          uv run --no-sync pytest -q -m lab \\\n            --tb=short",
 ])
 def test_the_integration_check_allows_the_default_and_lab_selections(line):
     assert not runs_integration_tests(line)
@@ -142,6 +169,11 @@ def test_the_integration_check_allows_the_default_and_lab_selections(line):
     "      - run: uv run --no-sync pytest -q --override-ini=addopts=",
     "      - run: uv run --no-sync pytest -q -c /dev/null",
     "      - run: uv run --no-sync pytest -q -m lab # integration",
+    "      - run: uv run --no-sync pytest -q -qo addopts=",
+    "      - run: uv run --no-sync pytest -qm \"not lab\"",
+    "      - run: uv run --no-sync pytest -qmlab",
+    "        run: |\n          uv run --no-sync pytest -q -m lab \\\n            -o addopts=",
+    "      - run: uv run --no-sync pytest -q -m 'lab",
     "      PYTEST_ADDOPTS: -m integration",
     "      MCP_TEST_ENV_FILE: /dev/null",
 ])
