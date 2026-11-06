@@ -722,3 +722,60 @@ def test_quote_stops_where_the_ai_text_stopped():
     assert "TAIL-UNSEEN" not in quoted and quoted.endswith("[truncated]")
     html_orig = _alternative(b"", b"<p>" + b"B " * 30_000 + b"</p><p>TAIL-UNSEEN</p>")
     assert "TAIL-UNSEEN" not in render.quotable_html(html_orig)
+
+
+# --- review after merge (ticket 08) ----------------------------------------------------------------------
+
+DKIM_B = "b=" + "A1b2C3d4E5f6G7h8" * 22        # one unbroken token far past 78 characters
+LONG_ORIGINAL = (
+    b"DKIM-Signature: v=1; a=rsa-sha256; d=example.org; s=sel; h=from:to:subject:date; bh=abc=; "
+    + DKIM_B.encode() + b"\r\n"
+    b"X-Long-Header: " + b"word " * 40 + b"end\r\n"
+    b"From: Cust <c@example.org>\r\nTo: me@x.example\r\nSubject: Greetings\r\nMessage-ID: <8@example.org>\r\n"
+    b"Date: Mon, 05 Oct 2026 10:00:00 +0200\r\nMIME-Version: 1.0\r\n"
+    b"Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"
+    + "Grüße, ein 8-Bit-Text.\r\n".encode() + b"Second line.\r\n")
+
+
+def _attached_octets(m: EmailMessage) -> bytes:
+    """The body of the message's first message/rfc822 part, as it is on the wire (CRLF)."""
+    wire_bytes = m.as_bytes(policy=m.policy.clone(linesep="\r\n"))
+    boundary = m.get_boundary().encode()
+    for chunk in wire_bytes.split(b"--" + boundary)[1:]:
+        head, _, body = chunk.partition(b"\r\n\r\n")
+        if b"message/rfc822" in head.lower():
+            return body[:-2] if body.endswith(b"\r\n") else body     # the CRLF before the boundary is its own
+    raise AssertionError("no message/rfc822 part")
+
+
+@pytest.mark.parametrize("original", [LONG_ORIGINAL, raw_message(body="plain 7-bit body\n").replace(b"\n", b"\r\n")],
+                         ids=["8bit-long-dkim", "7bit"])
+def test_forward_as_attachment_carries_the_stored_octets(original):
+    m = compose.forward(original, "me@x.example", ["b@x.example"], "FYI")
+    assert _attached_octets(m) == original
+    inner = list(parse(m.as_bytes()).iter_attachments())[0]
+    assert inner.get_content_type() == "message/rfc822"
+    assert str(inner["Content-Transfer-Encoding"]).lower() == ("8bit" if not original.isascii() else "7bit")
+
+
+def test_whole_message_source_carries_the_stored_octets():
+    m = compose.new("me@x.example", ["b@x.example"], "Hi", "see", files=[
+        compose.file("orig.eml", "message/rfc822", LONG_ORIGINAL)])
+    assert _attached_octets(m) == LONG_ORIGINAL
+
+
+@pytest.mark.parametrize("swap", [b"x" * 1200, b"a\0b", b"bare\rCR"], ids=["long-line", "nul", "bare-cr"])
+def test_a_binary_original_is_attached_byte_for_byte_as_a_file(swap):
+    binary = LONG_ORIGINAL.replace(b"Second line.", swap)
+    m = compose.forward(binary, "me@x.example", ["b@x.example"], "FYI")
+    part = list(parse(m.as_bytes()).iter_attachments())[0]
+    assert part.get_filename() == "forwarded.eml" and part.get_payload(decode=True) == binary
+    assert m.as_bytes().isascii()
+
+
+def test_an_8bit_original_to_a_server_without_8bitmime_is_made_7bit(wire):
+    client, server, ms = wire(extensions=[])
+    m = compose.forward(LONG_ORIGINAL, ADDR, ["a@b.co"], "FYI")
+    smtp.send(ms, ADDR, SECRET, m)
+    server.join(timeout=5)
+    assert server.data.isascii() and "BODY=8BITMIME" not in server.mail_from.upper()

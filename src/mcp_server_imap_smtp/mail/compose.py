@@ -97,14 +97,52 @@ def file(filename: str | None, content_type: str | None, data: bytes, dispositio
     return File(name, ctype, data, disp, cid, charset)
 
 
+class Stored(EmailMessage):
+    """A message kept as the octets it was stored as, to carry inside message/rfc822. The generator writes
+    no header block for it (the _write_headers hook) and writes its payload line by line, 8-bit octets as
+    they are (BytesGenerator._handle_text with surrogateescape), so only the line ends follow the
+    generator's: CRLF on the wire, which stored mail already has."""
+
+    def __init__(self, data: bytes):
+        super().__init__()
+        self.octets = data
+        self.set_payload(data.decode("ascii", "surrogateescape"))
+
+    def _write_headers(self, generator) -> None:
+        pass
+
+
+_LINE_END = re.compile(rb"\r?\n")
+
+
+def _message_encoding(data: bytes) -> str | None:
+    """The transfer encoding that carries a stored message unchanged inside message/rfc822: "7bit" or
+    "8bit" (RFC 2046 s5.2.1 allows no other on the way through SMTP), or None when it needs "binary" (a NUL,
+    a bare CR or a line over 998 octets, RFC 5322 s2.1.1), which SMTP without BINARYMIME cannot carry. A bare
+    LF counts as a line end: it goes out as CRLF, as every mail server would send it."""
+    if b"\0" in data:
+        return None
+    if any(b"\r" in line or len(line) > 998 for line in _LINE_END.split(data)):
+        return None
+    return "7bit" if data.isascii() else "8bit"
+
+
 def _message_part(f: File) -> EmailMessage:
-    """A message/* file. message/rfc822 and message/global carry a parsed message (never base64 encoded,
-    RFC 2046 s5.2.1); any other message/* type (delivery-status and the like) is a plain text body."""
-    part = EmailMessage()
+    """A message/* file. message/rfc822 and message/global carry the stored octets as they are, never parsed
+    and re-serialised: refolding a long header or encoding a long token would change what was received and
+    break its DKIM signature (review after merge, item 3). One that only binary could carry goes as an
+    application/octet-stream file instead, base64 encoded, which decodes to the same octets (message/rfc822
+    may not be base64 encoded, RFC 2046 s5.2.1). Any other message/* type (delivery-status and the like) is a
+    plain text body."""
     if f.content_type in ("message/rfc822", "message/global"):
-        inner = BytesParser(policy=policy.default).parsebytes(f.data)
-        part.set_content(inner, subtype=f.content_type.split("/")[1], disposition=f.disposition,
-                         filename=f.filename)
+        cte = _message_encoding(f.data)
+        if cte is None:
+            return _octet_part(f)
+        part = EmailMessage()
+        part["Content-Type"] = f.content_type
+        part["Content-Transfer-Encoding"] = cte
+        part.add_header("Content-Disposition", f.disposition, filename=f.filename)
+        part.set_payload([Stored(f.data)])
     else:
         # Parsed, so the generator finds the header blocks a delivery-status or disposition-notification
         # body is made of.
@@ -115,6 +153,14 @@ def _message_part(f: File) -> EmailMessage:
         part.add_header("Content-Disposition", f.disposition, filename=f.filename)
     if f.content_id:
         part["Content-ID"] = f"<{f.content_id}>"
+    return part
+
+
+def _octet_part(f: File) -> EmailMessage:
+    part = EmailMessage()
+    part.set_content(f.data, "application", "octet-stream", disposition=f.disposition, filename=f.filename,
+                     cid=f"<{f.content_id}>" if f.content_id else None)
+    part.set_param("name", f.filename)
     return part
 
 

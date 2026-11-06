@@ -76,3 +76,41 @@ def test_append_limit_is_read_from_the_server(lab_ca, profile):
             assert c.append_limit("INBOX") == first
         assert [n for n, _ in sent].count("CAPABILITY") <= 1
         assert (first is None) == (not any(cap.startswith("APPENDLIMIT") for cap in c.capabilities()))
+
+
+def _original(tag: str) -> bytes:
+    """A received message with a DKIM-Signature b= value far past 78 characters and an 8-bit body: what a
+    forward as attachment must carry octet for octet (review after merge, item 3)."""
+    return (b"DKIM-Signature: v=1; a=rsa-sha256; d=example.org; s=sel; h=from:to:subject; bh=abc=; b="
+            + b"A1b2C3d4E5f6G7h8" * 22 + b"\r\n"
+            b"From: Cust <c@example.org>\r\nTo: alice@example.test\r\nSubject: " + tag.encode() + b"\r\n"
+            b"Message-ID: <" + tag.encode() + b"@example.org>\r\nDate: Mon, 05 Oct 2026 10:00:00 +0200\r\n"
+            b"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n"
+            b"\r\n" + "Grüße, ein 8-Bit-Text.\r\n".encode())
+
+
+@pytest.mark.parametrize("profile", PROFILES, ids=lambda p: p.name)
+def test_forwarded_original_is_stored_octet_for_octet(lab_ca, profile):
+    original = _original(f"t08r-{time.time_ns()}")
+    m = compose.forward(original, ALICE, [BOB], "FYI")
+    with ImapClient.open(profile.server(), ALICE, users()[ALICE]) as c:
+        drafts = c.special("drafts")
+        uid = c.append(drafts, m.as_bytes(), ("\\Draft",), message_id=m["Message-ID"])
+        raw = c.fetch_raw(drafts, uid)
+    assert original in raw
+
+
+def test_forwarded_original_arrives_octet_for_octet(lab_ca):
+    tag = f"t08r-{time.time_ns()}"
+    original = _original(tag)
+    m = compose.forward(original, ALICE, [BOB], "FYI")
+    assert smtp.send(FLAT.server(), ALICE, users()[ALICE], m) == [BOB]
+    with ImapClient.open(FLAT.server(), BOB, users()[BOB]) as c:
+        for _ in range(50):
+            _, found = c.search("INBOX", SearchQuery(subject=f"Fwd: {tag}"))
+            if found:
+                break
+            time.sleep(0.2)
+        assert found, "the message did not arrive"
+        raw = c.fetch_raw("INBOX", found[0]["uid"])
+    assert original in raw

@@ -8,11 +8,12 @@ import copy
 import re
 import smtplib
 import ssl
-from email import encoders
+from email import encoders, policy
 from email.message import EmailMessage
+from email.parser import BytesParser
 from email.utils import parseaddr
 
-from .compose import envelope_recipients, too_large, wire_size
+from .compose import Stored, envelope_recipients, too_large, wire_size
 from .hosts import Connector, MailServer, StartTLSRefused, address_literal, reader_buffered
 from .imap import MailAuthError, MailError, limit_value
 from .resolve import normalise_address
@@ -126,6 +127,13 @@ def _seven_bit(msg: EmailMessage) -> EmailMessage:
     ASCII, whatever its Content-Transfer-Encoding label says, is re-encoded as quoted-printable (text) or
     base64 (anything else), and a message/* wrapper labelled 8bit or binary is relabelled 7bit."""
     out = copy.deepcopy(msg)
+    for part in list(out.walk()):
+        payload = part.get_payload()
+        if isinstance(payload, list) and payload and isinstance(payload[0], Stored) and not payload[0].octets.isascii():
+            # An attached original carries its stored octets (compose.Stored); 8-bit ones cannot travel to
+            # this server as they are, so they are parsed and their 8-bit parts re-encoded below, as a mail
+            # client would.
+            part.set_payload([BytesParser(policy=policy.default).parsebytes(payload[0].octets)])
     for part in out.walk():
         if part.is_multipart():
             continue
