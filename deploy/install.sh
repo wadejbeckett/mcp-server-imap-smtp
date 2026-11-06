@@ -75,6 +75,7 @@ if [[ ! $KEEP_RELEASES =~ ^[0-9]+$ ]] || (( KEEP_RELEASES < 2 )); then die "KEEP
 
 # --- 1. Preflight -------------------------------------------------------------------------------
 # Read in a subshell: os-release sets NAME (and other variables) that would overwrite ours.
+# shellcheck source=/dev/null   # the target machine's file, not part of this kit
 os_field() { (. /etc/os-release && eval "printf '%s' \"\${$1:-}\""); }
 OS_ID="$(os_field ID)"; OS_VERSION_ID="$(os_field VERSION_ID)"; OS_PRETTY="$(os_field PRETTY_NAME)"
 if [[ $OS_ID != debian || ! $OS_VERSION_ID =~ ^(12|13)$ ]]; then
@@ -299,6 +300,7 @@ systemctl enable --quiet apt-daily.timer apt-daily-upgrade.timer || warn "could 
 # UPGRADE_REBOOT_TIME=02:00 to let unattended-upgrades reboot at that time when one is required.
 NEEDRESTART_CONF=/etc/needrestart/conf.d/50-$NAME.conf
 if [[ -d /etc/needrestart/conf.d ]]; then
+    # shellcheck disable=SC2016   # $nrconf is Perl for needrestart and must reach the file unexpanded
     printf '# Written by %s install.sh. Remove this file to reverse.\n$nrconf{restart} = '"'"'a'"'"';\n' "$NAME" > "$NEEDRESTART_CONF"
     log "needrestart: services restart automatically after updates ($NEEDRESTART_CONF)"
 else
@@ -353,9 +355,9 @@ install_site() {  # install_site full|bootstrap: write, test, reload; restore th
     if [[ -e $DEFAULT_SITE || -L $DEFAULT_SITE ]]; then mv -f "$DEFAULT_SITE" "$DEFAULT_SAVED"; had_default=1; fi
     render_site "$1" > "$SITE.new"
     mv -f "$SITE.new" "$SITE"
-    ln -sfn "$SITE" /etc/nginx/sites-enabled/$NAME.conf
+    ln -sfn "$SITE" "/etc/nginx/sites-enabled/$NAME.conf"
     if ! nginx -t -q; then
-        if (( had_prev )); then mv -f "$SITE.prev" "$SITE"; else rm -f "$SITE" /etc/nginx/sites-enabled/$NAME.conf; fi
+        if (( had_prev )); then mv -f "$SITE.prev" "$SITE"; else rm -f "$SITE" "/etc/nginx/sites-enabled/$NAME.conf"; fi
         if (( had_default )); then mv -f "$DEFAULT_SAVED" "$DEFAULT_SITE"; fi
         die "nginx rejected the $1 site configuration; previous configuration restored"
     fi
@@ -399,15 +401,15 @@ chmod 0644 "/etc/systemd/system/$NAME.service" "/etc/systemd/system/$NAME-backup
 # The install name becomes the backup script's default, so running it by hand needs no NAME.
 sed "s/^NAME=\"\${NAME:-mcp-server-imap-smtp}\"/NAME=\"\${NAME:-$NAME}\"/" "$BUNDLE/backup.sh" > "/usr/local/sbin/$NAME-backup.new"
 chmod 0755 "/usr/local/sbin/$NAME-backup.new" && mv -f "/usr/local/sbin/$NAME-backup.new" "/usr/local/sbin/$NAME-backup"
-[[ -f $BUNDLE/smoke.sh ]] && install -m 0755 "$BUNDLE/smoke.sh" /usr/local/sbin/$NAME-smoke
+[[ -f $BUNDLE/smoke.sh ]] && install -m 0755 "$BUNDLE/smoke.sh" "/usr/local/sbin/$NAME-smoke"
 cat > "/usr/local/sbin/$NAME-admin.new" <<EOF
 #!/bin/sh
 # $NAME admin CLI (installed by deploy/install.sh). Runs as the service user so database
 # files never become root-owned. Usage: $NAME-admin grants list | grants revoke --grant ID | --mailbox ADDRESS
 cd / && exec runuser -u $NAME -- /opt/$NAME/venv/bin/mcp-server-imap-smtp-admin --config /etc/$NAME/config.toml "\$@"
 EOF
-chmod 0755 /usr/local/sbin/$NAME-admin.new
-mv -f /usr/local/sbin/$NAME-admin.new /usr/local/sbin/$NAME-admin
+chmod 0755 "/usr/local/sbin/$NAME-admin.new"
+mv -f "/usr/local/sbin/$NAME-admin.new" "/usr/local/sbin/$NAME-admin"
 
 switch_to() {   # switch_to RELEASE: atomically repoint /opt/$NAME/venv at releases/RELEASE/venv
     ln -sfn "releases/$1/venv" "$APP/venv.new"
@@ -420,14 +422,14 @@ switch_to "$RELEASE"
 [[ $PREVIOUS_REL == "$RELEASE" ]] || log "Active release: $RELEASE (previous: ${PREVIOUS_REL:-none})"
 
 if command -v systemd-analyze >/dev/null; then
-    systemd-analyze verify /etc/systemd/system/$NAME.service /etc/systemd/system/$NAME-backup.service \
-        /etc/systemd/system/$NAME-backup.timer || warn "systemd-analyze verify reported problems (above)"
+    systemd-analyze verify "/etc/systemd/system/$NAME.service" "/etc/systemd/system/$NAME-backup.service" \
+        "/etc/systemd/system/$NAME-backup.timer" || warn "systemd-analyze verify reported problems (above)"
 fi
 systemctl daemon-reload
 
 log "Starting $NAME"
-systemctl enable --quiet $NAME.service $NAME-backup.timer
-systemctl start $NAME-backup.timer
+systemctl enable --quiet "$NAME.service" "$NAME-backup.timer"
+systemctl start "$NAME-backup.timer"
 
 PRM="/.well-known/oauth-protected-resource$MAIL_PATH"
 healthy() {   # the gateway answers on its loopback listener within 30 s
@@ -438,14 +440,14 @@ healthy() {   # the gateway answers on its loopback listener within 30 s
     done
     return 1
 }
-systemctl restart $NAME.service || true
+systemctl restart "$NAME.service" || true
 if ! healthy; then
-    journalctl -u $NAME -n 40 --no-pager >&2 || true
+    journalctl -u "$NAME" -n 40 --no-pager >&2 || true
     if [[ -n $PREVIOUS_REL && $PREVIOUS_REL != "$RELEASE" && -x $APP/releases/$PREVIOUS_REL/venv/bin/mcp-server-imap-smtp ]]; then
         warn "release $RELEASE did not answer; switching back to $PREVIOUS_REL"
         switch_to "$PREVIOUS_REL"
-        systemctl reset-failed $NAME.service 2>/dev/null || true   # clear any start-rate limit hit by the failed release
-        systemctl restart $NAME.service || true
+        systemctl reset-failed "$NAME.service" 2>/dev/null || true   # clear any start-rate limit hit by the failed release
+        systemctl restart "$NAME.service" || true
         healthy || die "$NAME $RELEASE did not answer (log above); rolled back to $PREVIOUS_REL, which does not answer either: journalctl -u $NAME"
         die "$NAME $RELEASE did not answer on 127.0.0.1:$LISTEN_PORT within 30 s (log above); rolled back to $PREVIOUS_REL, which is running"
     fi
@@ -496,14 +498,14 @@ Release            $RELEASE (Python $(sed -n 's/^version *= *//p' "$APP/venv/pyv
 Public URL         https://$MCP_HOSTNAME$MAIL_PATH
 Config             $CONFIG ($(stat -c '%U:%G %a' "$CONFIG")); loopback redirects $( (( LOOPBACK )) && echo allowed || echo refused )
 Database           $DB_PATH: $db_state
-$NAME         $(systemctl is-active $NAME) / $(systemctl is-enabled $NAME)
+$NAME         $(systemctl is-active "$NAME") / $(systemctl is-enabled "$NAME")
 nginx              $(systemctl is-active nginx) / $(systemctl is-enabled nginx)
 Gateway (direct)   ok: http://127.0.0.1:$LISTEN_PORT$PRM
 Gateway via nginx  $via_nginx (TLS on 127.0.0.1, certificate not checked here)
 Unauthenticated    POST $MAIL_PATH -> HTTP $unauth (expect 401)
 Certificate        ${cert_issuer:-?}; expires ${cert_end:-?}
 Renewal timer      $(systemctl is-enabled certbot.timer 2>/dev/null || echo missing)
-Backup timer       $(systemctl is-enabled $NAME-backup.timer) (next: $(systemctl show -P NextElapseUSecRealtime $NAME-backup.timer 2>/dev/null || echo ?))
+Backup timer       $(systemctl is-enabled "$NAME-backup.timer") (next: $(systemctl show -P NextElapseUSecRealtime "$NAME-backup.timer" 2>/dev/null || echo ?))
 Firewall           $(ufw status | head -n1)
 Global addresses   ${addrs[*]:-none found}
 Mail servers TLS   (handshake only, no sign-in)$mail_lines

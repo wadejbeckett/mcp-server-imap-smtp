@@ -42,8 +42,8 @@ make_tls() {
 }
 
 wait_ready() {   # container: until Dovecot (993, 143, 4190) and Postfix (465, 587) listen inside it
-  local name="$1" i
-  for i in $(seq 1 60); do
+  local name="$1" _
+  for _ in $(seq 1 60); do
     if docker exec "$name" bash -c 'for p in 993 143 4190 465 587; do (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null || exit 1; done' \
         >/dev/null 2>&1; then return 0; fi
     if [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" != "true" ]; then
@@ -70,8 +70,9 @@ up() {
 }
 
 down() {
-  local ids; ids="$(docker ps -aq --filter label=mcp-imap-smtp-lab=1)"
-  [ -n "$ids" ] && docker rm -f $ids >/dev/null
+  local ids
+  mapfile -t ids < <(docker ps -aq --filter label=mcp-imap-smtp-lab=1)
+  if [ "${#ids[@]}" -gt 0 ]; then docker rm -f "${ids[@]}" >/dev/null; fi
   echo "lab stopped"
 }
 
