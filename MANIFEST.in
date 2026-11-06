@@ -1,0 +1,7 @@
+# What the source distribution carries besides the package (pyproject.toml, README.md and LICENSE are added
+# by the build backend). The test suite needs the repository (deploy/, lab/, tests/_lab.py), so it is left
+# out rather than shipped in part; run it from a clone.
+include CHANGELOG.md
+include SECURITY.md
+include config.example.toml
+prune tests

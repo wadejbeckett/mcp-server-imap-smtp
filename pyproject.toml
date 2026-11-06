@@ -7,12 +7,29 @@ license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["mcp>=2.1,<3", "cryptography>=42", "html2text>=2024.2", "httpx>=0.27", "idna>=3.6", "uvicorn>=0.30", "dnspython>=2.6"]
-keywords = ["mcp", "imap", "smtp", "email", "oauth"]
+keywords = ["mcp", "model-context-protocol", "mcp-server", "imap", "smtp", "email", "oauth", "ai"]
+# The licence is the SPDX expression above (PEP 639); a "License ::" classifier beside it is refused.
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Intended Audience :: System Administrators",
     "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Communications :: Email",
+    "Topic :: Communications :: Email :: Post-Office :: IMAP",
 ]
+
+[project.urls]
+Homepage = "https://github.com/wadejbeckett/mcp-server-imap-smtp"
+Repository = "https://github.com/wadejbeckett/mcp-server-imap-smtp"
+Issues = "https://github.com/wadejbeckett/mcp-server-imap-smtp/issues"
+Documentation = "https://github.com/wadejbeckett/mcp-server-imap-smtp/blob/main/docs/RUNNING.md"
+Changelog = "https://github.com/wadejbeckett/mcp-server-imap-smtp/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.3"]
