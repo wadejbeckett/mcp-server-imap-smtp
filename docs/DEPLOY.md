@@ -130,7 +130,7 @@ It changes only messages it created (each carries a unique token in its subject,
 Every user's IMAP and SMTP sign-in reaches the mail servers from the gateway's one address, so anything on a mail server that blocks that address cuts off every user on that server at once. Two kinds of protection commonly do it:
 
 - **Login-failure blocking** (fail2ban, a control panel's IP banning, or a similar tool) counts failed logins per source IP. A few users mistyping passwords (or one attacker) would ban the gateway. The gateway has its own per-IP, per-mailbox and per-server sign-in limits (see `login_failures` and `host_login_failures` in [RUNNING.md](RUNNING.md)), so the mail server does not need to police this address.
-- **IP reputation blocking** (for example Imunify360's cloud lists, or a firewall fed by public block lists) can silently drop every non-web port, the mail ports included, for any address on those lists, while the login-failure tool shows nothing. Datacenter and VPS addresses often land on such lists.
+- **IP reputation blocking** (for example Imunify360's cloud lists, or a firewall fed by public block lists) can silently drop every non-web port, 993 and 465 included, for any address on those lists, while the login-failure tool shows nothing. Datacenter and VPS addresses often land on such lists.
 
 On each mail server, with the gateway's public IPv4 and, if it has one, its IPv6 address (`install.sh` prints them as "Global addresses"; behind a floating IP or NAT, use the public address the mail server sees):
 
