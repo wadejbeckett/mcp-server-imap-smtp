@@ -8,6 +8,7 @@ import ipaddress
 import re
 import socket
 import ssl
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -123,6 +124,49 @@ class StartTLSRefused(Exception):
     would not verify). The connection must be dropped; nothing more may be said on it."""
 
 
+# Before the STARTTLS upgrade anyone on the path can answer, and smtplib and imaplib keep every reply line
+# they read with only a per-read timeout. So the whole cleartext phase (greeting, EHLO or CAPABILITY, the
+# STARTTLS reply) may read at most PLAIN_BYTES and must end within PLAIN_SECONDS of connecting.
+PLAIN_BYTES = 64 * 1024
+PLAIN_SECONDS = 30.0
+
+
+class _PlainBudget(socket.socket):
+    """A plain socket that refuses to read past its byte budget or its deadline (StartTLSRefused). Wrapping it
+    in TLS detaches it, so the budget ends with the upgrade."""
+
+    def _start_budget(self) -> None:
+        self._left, self._deadline = PLAIN_BYTES, time.monotonic() + PLAIN_SECONDS
+
+    def _guarded(self, read, flags: int):
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise StartTLSRefused(f"the mail server took more than {PLAIN_SECONDS:g} seconds before TLS")
+        if self._left <= 0:
+            raise StartTLSRefused(f"the mail server sent more than {PLAIN_BYTES} bytes before TLS")
+        previous = self.gettimeout()
+        if previous is None or previous > remaining:
+            self.settimeout(remaining)          # no single read may outlast the deadline
+        try:
+            got = read()
+        except TimeoutError:
+            if time.monotonic() >= self._deadline:
+                raise StartTLSRefused(f"the mail server took more than {PLAIN_SECONDS:g} seconds before TLS") \
+                    from None
+            raise
+        finally:
+            self.settimeout(previous)
+        if not flags & socket.MSG_PEEK:
+            self._left -= got if isinstance(got, int) else len(got)
+        return got
+
+    def recv(self, bufsize, flags=0):
+        return self._guarded(lambda: socket.socket.recv(self, bufsize, flags), flags)
+
+    def recv_into(self, buffer, nbytes=0, flags=0):
+        return self._guarded(lambda: socket.socket.recv_into(self, buffer, nbytes, flags), flags)
+
+
 def _waiting(sock: socket.socket) -> bool:
     """True if bytes (or the end of the stream) are already queued on sock, without waiting or consuming them."""
     previous = sock.gettimeout()
@@ -189,8 +233,13 @@ class Connector:
             raise
 
     def plain_connect(self, port: int, timeout: float = 10.0) -> socket.socket:
-        """A plain TCP connection, for a protocol that must upgrade it with starttls() before anything else."""
-        return socket.create_connection((self.server.host, port), timeout=timeout)
+        """A plain TCP connection, for a protocol that must upgrade it with starttls() before anything else.
+        What it reads before the upgrade is bounded (PLAIN_BYTES, PLAIN_SECONDS)."""
+        raw = socket.create_connection((self.server.host, port), timeout=timeout)
+        sock = _PlainBudget(raw.family, raw.type, raw.proto, fileno=raw.detach())
+        sock.settimeout(timeout)
+        sock._start_budget()
+        return sock
 
     def starttls(self, sock: socket.socket, buffered: bytes = b"") -> ssl.SSLSocket:
         """verified_starttls() with the same verifying context and the same name check as tls_connect()."""

@@ -322,6 +322,9 @@ class ImapClient:
         except (imaplib.IMAP4.abort, OSError) as exc:
             sock.close()
             raise MailError("mail server connection failed") from exc
+        except StartTLSRefused as exc:       # the cleartext greeting ran over its budget
+            sock.close()
+            raise MailError(f"STARTTLS refused: {exc}") from None
         except imaplib.IMAP4.error as exc:   # "* BYE" / "* NO" greeting, or no CAPABILITY: an outage, not a password verdict
             sock.close()
             raise MailError("mail server refused the connection") from exc

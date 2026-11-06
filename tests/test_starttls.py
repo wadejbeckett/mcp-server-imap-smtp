@@ -10,6 +10,7 @@ import ipaddress
 import socket
 import ssl
 import threading
+import time
 
 import pytest
 from cryptography import x509
@@ -136,9 +137,21 @@ class FakeServer(threading.Thread):
         assert not self.is_alive()
 
 
+def flood(fake, prefix, options):
+    """Before TLS, what anyone on the path could send: `flood` lines of 200 bytes before the real reply to EHLO
+    or CAPABILITY, `pause` seconds apart. Stops quietly when the connector hangs up."""
+    try:
+        for _ in range(options.get("flood", 0)):
+            fake.send(prefix + "x" * 194 + "\r\n")
+            time.sleep(options.get("pause", 0))
+    except OSError:
+        raise EOFError from None
+
+
 class FakeSMTP(FakeServer):
     """Submission with STARTTLS. Options: starttls (advertise it), starttls_reply (the line(s) sent to STARTTLS,
-    in one write), plain_auth (AUTH mechanisms offered before TLS), auth (mechanisms after TLS)."""
+    in one write), plain_auth (AUTH mechanisms offered before TLS), auth (mechanisms after TLS), flood and
+    pause (see flood())."""
 
     def serve(self):
         o = self.options
@@ -150,6 +163,7 @@ class FakeSMTP(FakeServer):
                 if self.tls_up:
                     self.send(f"250-mail.example\r\n250-8BITMIME\r\n250 AUTH {o.get('auth', 'PLAIN LOGIN')}\r\n")
                 else:
+                    flood(self, "250-", o)
                     ext = "250-STARTTLS\r\n" if o.get("starttls", True) else ""
                     self.send(f"250-mail.example\r\n{ext}250 AUTH {o.get('plain_auth', 'PLAIN')}\r\n")
             elif verb == "STARTTLS" and not self.tls_up:
@@ -180,7 +194,7 @@ class FakeSMTP(FakeServer):
 
 class FakeIMAP(FakeServer):
     """IMAP with STARTTLS. Options: greeting, caps (before TLS), starttls_reply (sent to STARTTLS in one write;
-    {tag} is filled in), tls_caps (after TLS)."""
+    {tag} is filled in), tls_caps (after TLS), flood and pause (see flood())."""
 
     def serve(self):
         o = self.options
@@ -191,6 +205,8 @@ class FakeIMAP(FakeServer):
             if verb == "CAPABILITY":
                 caps = o.get("tls_caps", "IMAP4rev1 AUTH=PLAIN SASL-IR") if self.tls_up else \
                     o.get("caps", "IMAP4rev1 STARTTLS LOGINDISABLED")
+                if not self.tls_up:
+                    flood(self, "* OK ", o)
                 self.send(f"* CAPABILITY {caps}\r\n{tag} OK done\r\n")
             elif verb == "STARTTLS" and not self.tls_up:
                 reply = o.get("starttls_reply", "{tag} OK begin TLS\r\n").format(tag=tag)
@@ -387,6 +403,55 @@ def test_sign_in_check_reports_a_server_without_starttls_as_unavailable_not_a_wr
     fake = FakeIMAP(certs["good"], caps="IMAP4rev1")
     with pytest.raises(MailUnavailable):
         imap_verifier(ADDR, SECRET, imap_server(fake))
+    fake.finish()
+
+
+# --- the cleartext budget ------------------------------------------------------------------------------
+# Before TLS anyone on the path can answer, so what is read in cleartext is bounded in bytes and in time.
+
+def test_smtp_endless_ehlo_reply_before_tls_is_refused(certs):
+    fake = FakeSMTP(certs["good"], flood=10_000)                  # 2 MB of "250-" lines
+    with pytest.raises(MailError, match="STARTTLS refused: .*more than"):
+        smtp.send(smtp_server(fake), ADDR, SECRET, message())
+    fake.finish()
+    assert fake.plain == ["EHLO mcp.example.test"] and fake.secure == []
+
+
+def test_smtp_cleartext_phase_has_one_overall_deadline(certs, monkeypatch):
+    monkeypatch.setattr(hosts, "PLAIN_SECONDS", 0.5)
+    fake = FakeSMTP(certs["good"], flood=30, pause=0.1)           # each line well inside the read timeout
+    started = time.monotonic()
+    with pytest.raises(MailError, match="STARTTLS refused: .*seconds"):
+        smtp.send(smtp_server(fake), ADDR, SECRET, message())
+    assert time.monotonic() - started < 2
+    fake.finish()
+    assert fake.plain == ["EHLO mcp.example.test"] and fake.secure == []
+
+
+def test_imap_endless_untagged_lines_before_tls_are_refused(certs):
+    fake = FakeIMAP(certs["good"], caps="IMAP4rev1 STARTTLS", flood=10_000)
+    with pytest.raises(MailError, match="STARTTLS refused: .*more than"):
+        ImapClient.open(imap_server(fake), ADDR, SECRET)
+    fake.finish()
+    assert [line.split(" ", 1)[1] for line in fake.plain] == ["CAPABILITY"] and fake.secure == []
+
+
+def test_imap_cleartext_phase_has_one_overall_deadline(certs, monkeypatch):
+    monkeypatch.setattr(hosts, "PLAIN_SECONDS", 0.5)
+    fake = FakeIMAP(certs["good"], flood=30, pause=0.1)
+    started = time.monotonic()
+    with pytest.raises(MailError, match="STARTTLS refused: .*seconds"):
+        ImapClient.open(imap_server(fake), ADDR, SECRET)
+    assert time.monotonic() - started < 2
+    fake.finish()
+    assert fake.secure == []
+
+
+def test_budget_ends_with_the_upgrade(certs, monkeypatch):
+    """After TLS the verified server may say as much as it likes: the budget is for cleartext only."""
+    monkeypatch.setattr(hosts, "PLAIN_BYTES", 600)
+    fake = FakeSMTP(certs["good"], auth="PLAIN LOGIN " + "X" * 1000)
+    assert smtp.send(smtp_server(fake), ADDR, SECRET, message()) == ["you@example.test"]
     fake.finish()
 
 
