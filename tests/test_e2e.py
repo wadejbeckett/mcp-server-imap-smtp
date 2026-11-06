@@ -519,3 +519,98 @@ def test_operator_values_reach_the_server_name_and_instructions(tmp_path, store)
         result = rpc(c, tok["access_token"], INIT).json()["result"]
     assert result["serverInfo"]["name"] == "Acme Mail"
     assert result["instructions"].startswith("Acme Mail: the user's mailboxes hosted by Acme.")
+
+
+# Token revocation (RFC 7009). A public client (token_endpoint_auth_method "none") has no secret, and section
+# 2.1 lets it revoke its own tokens identified by client_id alone; the SDK's request model demanded a
+# client_secret field, so every AI app and script got 400 and could not end its own connection.
+def revoke(c, client_id, token, hint=None, **extra):
+    data = {"token": token, "client_id": client_id, **extra}
+    if hint is not None:
+        data["token_type_hint"] = hint
+    return c.post("/revoke", data=data)
+
+
+def connected_tokens(c):
+    client_id, code, verifier = sign_in(c)
+    tok = exchange(c, client_id, code, verifier).json()
+    return client_id, tok
+
+
+@pytest.mark.parametrize("hint", [None, "refresh_token"])
+def test_public_client_revoking_its_refresh_token_ends_the_grant(client, hint):
+    client_id, tok = connected_tokens(client)
+    r = revoke(client, client_id, tok["refresh_token"], hint)
+    assert r.status_code == 200, r.text
+    assert r.headers["cache-control"] == "no-store"
+    assert rpc(client, tok["access_token"], INIT).status_code == 401           # the whole grant ends
+    assert refresh(client, client_id, tok["refresh_token"]).status_code == 400
+
+
+@pytest.mark.parametrize("hint", [None, "access_token"])
+def test_public_client_revoking_its_access_token_ends_only_that_token(client, hint):
+    client_id, tok = connected_tokens(client)
+    assert revoke(client, client_id, tok["access_token"], hint).status_code == 200
+    assert rpc(client, tok["access_token"], INIT).status_code == 401
+    again = refresh(client, client_id, tok["refresh_token"])
+    assert again.status_code == 200
+    assert rpc(client, again.json()["access_token"], INIT).status_code == 200
+
+
+def test_revoking_an_unknown_token_answers_200(client):
+    client_id = register(client).json()["client_id"]
+    assert revoke(client, client_id, "no-such-token").status_code == 200
+
+
+def test_a_client_cannot_revoke_another_clients_tokens(client):
+    _, tok = connected_tokens(client)
+    other = register(client).json()["client_id"]
+    for token in (tok["refresh_token"], tok["access_token"]):
+        assert revoke(client, other, token).status_code == 200                 # RFC 7009: no hint either way
+    assert rpc(client, tok["access_token"], INIT).status_code == 200
+
+
+def test_revocation_needs_a_known_client_id(client):
+    client_id, tok = connected_tokens(client)
+    assert client.post("/revoke", data={"token": tok["refresh_token"]}).status_code == 401
+    assert revoke(client, "no-such-client", tok["refresh_token"]).status_code == 401
+    assert rpc(client, tok["access_token"], INIT).status_code == 200
+
+
+def test_revocation_without_a_token_is_a_400(client):
+    client_id = register(client).json()["client_id"]
+    r = client.post("/revoke", data={"client_id": client_id})
+    assert r.status_code == 400 and r.json()["error"] == "invalid_request"
+
+
+def test_confidential_client_still_needs_its_secret_to_revoke(client):
+    reg = register(client, token_endpoint_auth_method="client_secret_post").json()
+    assert reg["client_secret"]
+    code, verifier = authorize_and_login(client, reg["client_id"])
+    tok = client.post("/token", data={"grant_type": "authorization_code", "code": code, "redirect_uri": CB,
+                                      "client_id": reg["client_id"], "client_secret": reg["client_secret"],
+                                      "code_verifier": verifier, "resource": MAIL}).json()
+    assert revoke(client, reg["client_id"], tok["refresh_token"]).status_code == 401
+    assert revoke(client, reg["client_id"], tok["refresh_token"], client_secret="wrong").status_code == 401
+    assert rpc(client, tok["access_token"], INIT).status_code == 200
+    assert revoke(client, reg["client_id"], tok["refresh_token"], client_secret=reg["client_secret"]).status_code == 200
+    assert rpc(client, tok["access_token"], INIT).status_code == 401
+
+
+def test_metadata_advertises_revocation_without_a_secret(client):
+    asm = client.get("/.well-known/oauth-authorization-server").json()
+    assert asm["revocation_endpoint"].rstrip("/") == f"{BASE}/revoke"
+    assert "none" in asm["revocation_endpoint_auth_methods_supported"]
+
+
+def test_revocation_keeps_cors_for_browser_clients(client):
+    r = client.options("/revoke", headers={"Origin": "https://claude.ai", "Access-Control-Request-Method": "POST"})
+    assert r.status_code == 200 and "POST" in r.headers["access-control-allow-methods"]
+
+
+def test_revocation_is_rate_limited_per_client_ip(tmp_path, store):
+    app = build_app(make_settings(tmp_path, token_limit=2), store=store, opener=no_network, sender=no_network,
+                    verifier=lambda a, p, server: False)
+    with TestClient(app, base_url=BASE, follow_redirects=False) as c:
+        client_id = register(c).json()["client_id"]
+        assert [revoke(c, client_id, "x").status_code for _ in range(3)] == [200, 200, 429]

@@ -108,7 +108,7 @@ One TOML file, read by both `mcp-server-imap-smtp` and `mcp-server-imap-smtp-adm
 | `register_limit` | `30` | `POST /register` (dynamic client registration) requests allowed per client IP within `login_window`; further requests get HTTP 429. |
 | `register_overall_limit` | `1000` | `POST /register` requests from all clients together within `login_window`. Registration also takes only `application/json` bodies of at most 8 KB (HTTP 415 and 413 otherwise), a `client_name` of at most 100 characters and at most 10 redirect URIs of at most 512 characters each; registered clients that never complete a sign-in are deleted after 24 hours. |
 | `authorize_limit` | `30` | `GET` and `POST /authorize` requests together, allowed per client IP within `login_window`; further requests get HTTP 429. |
-| `token_limit` | `120` | `POST /token` (code exchange and refresh) requests allowed per client IP within `login_window`; further requests get HTTP 429. |
+| `token_limit` | `120` | `POST /token` (code exchange and refresh) requests allowed per client IP within `login_window`; further requests get HTTP 429. `POST /revoke` has its own budget of the same size. |
 | `max_mailboxes` | `0` | Mailboxes one connection (grant) may hold, the main one included. `0` means no limit. When set, the sign-in page says how many more can be added and refuses a longer list. |
 | `search_max_mailboxes` | `0` | Mailboxes searched by one `mail_search` call with `mailbox="*"`, in sign-in order; the rest are listed in the result's `errors` as not searched. `0` means every mailbox in the connection. |
 | `max_sessions_per_mailbox` | `4` | IMAP sessions the connector holds open for one mailbox at once, for all connections that include it together (see "Mail server sessions"). Keep it below the mail server's per-user, per-address limit (Dovecot's `mail_max_userip_connections`, 10 by default), since every user reaches the mail server from the connector's one address. At least 1. |
@@ -263,7 +263,7 @@ Then:
 
 ## Paths
 
-- **At the site root:** the OAuth authorisation server's endpoints `/authorize`, `/token`, `/register`, `/revoke`, and the metadata `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/<path>`. AI apps discover these from the metadata.
+- **At the site root:** the OAuth authorisation server's endpoints `/authorize`, `/token`, `/register`, `/revoke`, and the metadata `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/<path>`. AI apps discover these from the metadata. `/revoke` (RFC 7009) also takes a public client's request, identified by `client_id` alone, so an AI app or script can end its own connection; revoking a refresh token ends the whole connection, revoking an access token ends only that token, and a client can revoke only tokens issued to it.
 - **Under `mail_resource_url`'s path (`/mail` in the examples):** the MCP endpoint itself, the sign-in page `/mail/login` and the manage page `/mail/manage`. `/login` and `/manage` at the root redirect there (308), so links in a user guide may use either.
 
 Mounting the connector under a path leaves the rest of the host free for other services. Set `mail_resource_url` to the site root to give it the whole host.

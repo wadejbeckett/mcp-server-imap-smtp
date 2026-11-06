@@ -24,6 +24,7 @@ from starlette.types import ASGIApp
 from .auth.cimd import MetadataPatch
 from .auth.login import LoginLimits, Verifier, imap_verifier, login_routes
 from .auth.provider import SCOPES, GatewayProvider
+from .auth.revoke import install_public_revocation
 from .config import Settings, load_sealing_secret, load_settings
 from .mail import smtp
 from .mail.imap import ImapClient
@@ -84,19 +85,22 @@ def build_app(settings: Settings, *, verifier: Verifier | None = None, resolver:
     register_mail_tools(server, store, settings, opener=opener, sender=sender, sessions=sessions)
     hosts = [settings.public_host, f"127.0.0.1:{settings.listen_port}", f"localhost:{settings.listen_port}",
              *settings.extra_allowed_hosts]
-    app = MetadataPatch(server.streamable_http_app(
+    sdk_app = server.streamable_http_app(
         streamable_http_path=settings.mail_path, stateless_http=True, json_response=True,
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=hosts,
                                                      allowed_origins=[settings.issuer_url]),
         host=settings.listen_host,
-    ), resource_metadata_path=urlparse(str(build_resource_metadata_url(settings.mail_resource_url))).path,
+    )
+    install_public_revocation(sdk_app, provider)      # public clients can end their own connection (RFC 7009)
+    app = MetadataPatch(sdk_app, resource_metadata_path=urlparse(str(build_resource_metadata_url(settings.mail_resource_url))).path,
         scopes=SCOPES)
     # Anonymous endpoints that write to the database (registration), create pending sign-ins (authorize)
-    # or verify presented codes and refresh tokens (token).
+    # or verify presented codes and refresh tokens (token, revoke: each has its own token_limit budget).
     authorize = RateLimiter(settings.authorize_limit, settings.login_window)
     app = RequestLimits(app, {("POST", "/register"): RateLimiter(settings.register_limit, settings.login_window),
                               ("GET", "/authorize"): authorize, ("POST", "/authorize"): authorize,
-                              ("POST", "/token"): RateLimiter(settings.token_limit, settings.login_window)},
+                              ("POST", "/token"): RateLimiter(settings.token_limit, settings.login_window),
+                              ("POST", "/revoke"): RateLimiter(settings.token_limit, settings.login_window)},
                         retry_after=settings.login_window,
                         overall={("POST", "/register"): RateLimiter(settings.register_overall_limit,
                                                                     settings.login_window)},

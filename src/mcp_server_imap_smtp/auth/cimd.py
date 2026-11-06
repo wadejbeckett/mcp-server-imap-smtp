@@ -104,7 +104,8 @@ def fetch_client_document(client_id_url: str, settings: Settings, http: httpx.Cl
 class MetadataPatch:
     """Fill in what the SDK-built discovery documents cannot say.
 
-    Authorization-server metadata gains CIMD support, the "none" token auth method and scopes_supported
+    Authorization-server metadata gains CIMD support, the "none" token and revocation auth method, the RFC
+    9207 iss flag and scopes_supported
     (the SDK fills that only from ClientRegistrationOptions.valid_scopes, which would also refuse any
     registration naming another scope). Protected-resource metadata gains scopes_supported: the SDK only
     fills it from AuthSettings.required_scopes, which would also make every bearer token carry those
@@ -131,6 +132,10 @@ class MetadataPatch:
         methods = meta.setdefault("token_endpoint_auth_methods_supported", [])
         if "none" not in methods:
             methods.append("none")
+        # A public client revokes its own tokens with client_id alone (RFC 7009 section 2.1; auth/revoke.py).
+        revocation = meta.get("revocation_endpoint_auth_methods_supported")
+        if isinstance(revocation, list) and "none" not in revocation:
+            revocation.append("none")
         if scopes:
             meta["scopes_supported"] = scopes
 
