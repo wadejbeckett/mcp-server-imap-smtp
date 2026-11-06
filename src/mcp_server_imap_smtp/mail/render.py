@@ -147,6 +147,16 @@ def _html_to_text(html: str, links: list[str] | None = None) -> str:
     return h.handle(visible)
 
 
+HTML_TYPES = ("text/html", "text/x-amp-html")
+
+
+def visible_text(html: str) -> tuple[str, list[str]]:
+    """(text, link targets) of HTML exactly as mail_read gives a body: hidden elements left out, link targets
+    listed apart from the text."""
+    links: list[str] = []
+    return _html_to_text(html, links), links
+
+
 def _get_body_text(body: EmailMessage | None, links: list[str] | None = None) -> str:
     """Extract text content from a body part, handling encoding errors."""
     if body is None:

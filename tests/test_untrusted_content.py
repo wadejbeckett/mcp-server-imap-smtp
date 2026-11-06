@@ -164,3 +164,38 @@ def test_quote_words_are_a_subset_of_the_ai_text_for_random_markup():
                 out.append(f" W{k}X ")
         seen, quoted = _quote_words("".join(out))
         assert quoted <= seen, "".join(out)
+
+
+# --- review after merge (ticket 08), item 4: mail_attachment returns no more of an HTML part than mail_read --
+
+def _with_html_part() -> bytes:
+    html = (f'<p>Hi <a href="https://ok.example/">there</a></p><div style="display:none">{INJECTION}</div>'
+            "<p>Regards</p>")
+    return (b"From: a@x.example\r\nTo: me@x.example\r\nSubject: s\r\nMIME-Version: 1.0\r\n"
+            b"Content-Type: multipart/mixed; boundary=o\r\n\r\n"
+            b"--o\r\nContent-Type: multipart/alternative; boundary=a\r\n\r\n"
+            b"--a\r\nContent-Type: text/plain\r\n\r\nHi there\r\n"
+            b"--a\r\nContent-Type: text/html; charset=utf-8\r\nContent-ID: <body@x>\r\n\r\n" + html.encode() + b"\r\n"
+            b"--a--\r\n"
+            b"--o\r\nContent-Type: text/html; name=page.html\r\nContent-Disposition: attachment; filename=page.html\r\n"
+            b"\r\n" + html.encode() + b"\r\n"
+            b"--o\r\nContent-Type: text/plain; name=notes.txt\r\nContent-Disposition: attachment; filename=notes.txt\r\n"
+            b"\r\nplain <b>notes</b>\r\n--o--\r\n")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("sel", [{"part": "1.2"}, {"content_id": "body@x"}, {"part": "2"}, {"index": 0}])
+async def test_mail_attachment_filters_html_parts_like_mail_read(env, sel):
+    srv, _ = build(env, FakeImap({("INBOX", 5): _with_html_part()}))
+    out = payload(await srv.call_tool("mail_attachment", {"folder": "INBOX", "uid": 5, **sel}))
+    assert out["content_type"] == "text/html" and out["content_notice"] == tools_mod.UNTRUSTED
+    assert "IGNORE" not in str(out) and "Hi" in out["text"] and "Regards" in out["text"]
+    assert "ok.example" not in out["text"] and out["links"] == ["https://ok.example/"]
+    assert "hidden" in out["note"]
+
+
+@pytest.mark.anyio
+async def test_mail_attachment_returns_a_plain_text_part_as_it_is(env):
+    srv, _ = build(env, FakeImap({("INBOX", 5): _with_html_part()}))
+    out = payload(await srv.call_tool("mail_attachment", {"folder": "INBOX", "uid": 5, "part": "3"}))
+    assert out["text"].strip() == "plain <b>notes</b>" and "links" not in out
