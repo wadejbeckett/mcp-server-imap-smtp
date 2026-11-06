@@ -116,7 +116,10 @@ def test_imap_over_143_with_starttls(lab_ca, monkeypatch, profile):
     with record_plaintext(monkeypatch) as recorded:
         with ImapClient.open(profile.server(imap="starttls"), ALICE, users()[ALICE]) as c:
             assert "INBOX" in [f.name for f in c.folders()]
-    assert [line.split(" ", 1)[1] for line in cleartext_lines(recorded)] == ["CAPABILITY", "STARTTLS"]
+    # imaplib asks CAPABILITY itself on Python 3.14; before that it takes the list from Dovecot's greeting.
+    # Either way STARTTLS is the last thing said in cleartext and nothing but these two is ever sent.
+    sent = [line.split(" ", 1)[1] for line in cleartext_lines(recorded)]
+    assert sent in (["STARTTLS"], ["CAPABILITY", "STARTTLS"])
     assert_no_credentials(recorded, ALICE)
 
 
