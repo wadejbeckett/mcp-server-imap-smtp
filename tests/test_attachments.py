@@ -791,3 +791,13 @@ def test_a_truncated_original_is_marked_in_the_text_quote_too():
         assert "[truncated]" in html
     short = parse(compose.reply(raw_message(), "me@x.example", "ok").as_bytes()).get_body(("plain",)).get_content()
     assert "[truncated]" not in short
+
+
+def test_size_limits_are_described_as_each_tool_applies_them(env):
+    import asyncio
+    srv, _ = build(env)
+    listed = {t.name: t.description for t in asyncio.run(srv.list_tools())}
+    send, draft = listed["mail_send"], listed["mail_draft"]
+    assert "refused before anything is uploaded" not in send + draft
+    assert "SMTP SIZE" in send and "is still sent" in send and "Sent copy" in send
+    assert "APPENDLIMIT" in draft and "SMTP SIZE" not in draft and "refused before it is saved" in draft

@@ -103,8 +103,14 @@ class Attachment(BaseModel):
 ATTACH_NOTE = ("attachments: each is {filename, content_type, base64} for a new file, or {source_folder, "
                "source_uid, source_part} (plus source_mailbox for another connected mailbox) to attach a part of "
                "a message already in a mailbox without sending its bytes; give exactly one of base64 or "
-               "source_uid. A message larger than the mail server accepts (SMTP SIZE, IMAP APPENDLIMIT) is "
-               "refused before anything is uploaded, with the limit named.")
+               "source_uid.")
+# What each tool does with a server's size limit (review after merge, item 5): mail_send is refused only by
+# SMTP SIZE; over the Sent folder's APPENDLIMIT the message still goes and only the copy is skipped.
+DRAFT_SIZE_NOTE = ("A draft larger than the Drafts folder accepts (IMAP APPENDLIMIT) is refused before it is saved, "
+                   "with the limit named.")
+SEND_SIZE_NOTE = ("A message larger than the mail server accepts (SMTP SIZE) is refused before it is sent, with the "
+                  "limit named. A message larger than the Sent folder accepts (IMAP APPENDLIMIT) is still sent; "
+                  "only its Sent copy is skipped, and the result's warning says so.")
 
 
 def _check_attachments(items: list[Attachment] | None) -> list[Attachment]:
@@ -351,6 +357,9 @@ def register_mail_tools(server: MCPServer, store: Store, settings: Settings,
             params = set(inspect.signature(fn).parameters)
             if "attachments" in params:
                 wrapper.__doc__ = (wrapper.__doc__ or "").rstrip() + "\n" + ATTACH_NOTE
+            size_note = {"mail_draft": DRAFT_SIZE_NOTE, "mail_send": SEND_SIZE_NOTE}.get(fn.__name__)
+            if size_note:
+                wrapper.__doc__ = wrapper.__doc__.rstrip() + "\n" + size_note
             if _FOLDER_PARAMS & params:
                 wrapper.__doc__ = (wrapper.__doc__ or "").rstrip() + "\n" + FOLDER_NOTE
             return server.tool(annotations=annotations)(wrapper)
