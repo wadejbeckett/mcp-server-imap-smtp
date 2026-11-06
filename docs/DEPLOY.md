@@ -110,7 +110,7 @@ Before DNS points at the server: `SMOKE_RESOLVE=mcp.example.com:443:<server addr
 
 ### Check the whole path
 
-`smoke.sh` never signs in. `deploy/e2e.py` does what an AI app does, with a mailbox you choose: it registers a client, signs in through the sign-in page with PKCE, exchanges and refreshes the tokens, opens an MCP session, lists the tools and reads the newest message in INBOX. It also checks the refusals that matter: 401 without a token, and 403 for a sign-in form posted from another site (that attempt sends no password). It needs a mailbox the gateway can sign in to, so on a mail server behind a firewall run it after section 6.
+`smoke.sh` never signs in. `deploy/e2e.py` does what an AI app does, with a mailbox you choose: it registers a client, signs in through the sign-in page with PKCE, exchanges and refreshes the tokens, opens an MCP session, lists the tools and reads the newest message in INBOX. It also checks the refusals that matter: 401 without a token, and 403 for a sign-in form posted from another site (that attempt sends no password). It needs a mailbox the gateway can sign in to, so on a mail server behind a firewall run it after section 6. It registers a loopback redirect URI (nothing listens there; the code is read from the page); on an instance with `allow_loopback_redirects = false`, add `--redirect-uri` with a URI from the instance's `redirect_allowlist` instead.
 
 ```bash
 install -m 600 /dev/null ~/e2e.env    # then add MCP_E2E_ADDRESS=... and MCP_E2E_PASSWORD=... with an editor
@@ -123,7 +123,7 @@ The address and password come only from that file (which only you may read; the 
 - `--send` sends a message to the mailbox itself, waits up to a minute for it to arrive, reads it and removes it and its Sent copy. It is skipped when sending is off (`send_mode`).
 - `--keep` leaves the connection in place at the end instead of revoking it.
 
-It changes only messages it created (each carries a unique token in its subject, checked again before every change). Removing means `mail_delete` where the instance offers it, otherwise a move to Trash. At the end it revokes the connection and checks that the access token is refused, so it leaves no connection and no mail behind except in Trash. Every check prints PASS, FAIL or SKIP; any FAIL exits 1. `--json` prints a summary for monitoring (no secrets, no mail content), `--cafile` trusts a private CA, and `--mail-path` is for a service mounted somewhere other than `/mail`. An `http://` URL is accepted only for a loopback address, for a local instance.
+It changes only messages it created (each carries a unique token in its subject, checked again before every change). Removing means `mail_delete` where the instance offers it, otherwise a move to Trash. At the end it revokes the connection and checks that the access token is refused, so it leaves no connection and no mail behind except in Trash (the registered client record stays, as it does for any app). Every check prints PASS, FAIL or SKIP; any FAIL exits 1. `--json` prints a summary for monitoring (no secrets, no mail content), `--cafile` trusts a private CA, and `--mail-path` is for a service mounted somewhere other than `/mail`. An `http://` URL is accepted only for a loopback address, for a local instance.
 
 ## 6. Trust the gateway on each mail server, then check mail from the gateway (go-live gate)
 

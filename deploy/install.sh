@@ -507,7 +507,8 @@ Next:
      (fail2ban, a control panel's IP banning, a host firewall), since every user's sign-ins come from
      here; then re-check "Mail servers TLS" (docs/DEPLOY.md). Behind a floating or NAT address, use that.
   3. From the workstation, with a test mailbox: deploy/e2e.py https://$MCP_HOSTNAME --write --send
-     (signs in, reads, saves and sends to itself, then removes it all; docs/DEPLOY.md, "Check the whole path")
+     (signs in, reads, saves and sends to itself, moves its messages to Trash and revokes its
+     connection; docs/DEPLOY.md, "Check the whole path")
   4. Admin: $NAME-admin grants list   Logs: journalctl -u $NAME -f
 EOF
 [[ $via_nginx == ok && $unauth == 401 ]] || die "post-install checks failed (summary above)"

@@ -94,7 +94,7 @@ One TOML file, read by both `mcp-server-imap-smtp` and `mcp-server-imap-smtp-adm
 | `imap_port` | `993` | Default IMAP-over-TLS port for `mail_host` and for any `[[mail_servers]]` entry that does not set its own. |
 | `smtp_port` | `465` | Default SMTP-over-TLS port, used the same way. |
 | `redirect_allowlist` | claude.ai, ChatGPT, Grok and Cursor callback URLs (`DEFAULT_REDIRECTS` in `config.py`) | OAuth redirect URIs accepted at registration and authorisation. An entry ending in `*` matches by prefix (the part before the `*`), except that the part after the prefix may not contain `..`, a backslash, `;`, `#`, or an encoded dot, slash, backslash or `%` (`%2e`, `%2f`, `%5c`, `%25`, any case); any other entry, one ending in `/` included, must match exactly. Setting it replaces the default list. A stored client keeps only the redirect URIs the current list accepts. |
-| `allow_loopback_redirects` | `true` | When true, any `http://127.0.0.1` or `http://localhost` redirect URI (any port or path) is accepted, in addition to the allowlist. This is what Claude Code, MCP Inspector and other desktop clients use. Set it to `false` on a public deployment that only serves claude.ai and ChatGPT: it removes the ability for any locally running program on a user's machine to register as a client and receive an authorisation code (PKCE still applies either way). With `false`, Claude Code and the Inspector can no longer connect. |
+| `allow_loopback_redirects` | `true` | When true, any `http://127.0.0.1` or `http://localhost` redirect URI (any port or path) is accepted, in addition to the allowlist. This is what Claude Code, MCP Inspector and other desktop clients use. Set it to `false` on a public deployment that only serves claude.ai and ChatGPT: it removes the ability for any locally running program on a user's machine to register as a client and receive an authorisation code (PKCE still applies either way). With `false`, Claude Code and the Inspector can no longer connect, and `deploy/e2e.py` needs `--redirect-uri` with a URI from `redirect_allowlist`. |
 | `access_ttl` | `3600` | Access token lifetime, seconds. |
 | `refresh_ttl` | `2592000` | Refresh token lifetime, seconds (30 days); refresh tokens rotate on use. |
 | `code_ttl` | `300` | Authorisation code lifetime, seconds. |
@@ -242,7 +242,7 @@ While testing sign-in by hand, wrong passwords and refused domains count against
 
 ### Scripted check of a running server
 
-`deploy/e2e.py http://127.0.0.1:8765 --env-file <file> --write --send` walks a running server the way an AI app does (sign-in page, tokens, MCP, the read tools, a draft and a message to the mailbox itself, then revocation) and removes everything it made; `http://` is accepted for loopback addresses only. The env file holds `MCP_E2E_ADDRESS` and `MCP_E2E_PASSWORD` and must be readable by you alone. Details: [DEPLOY.md](DEPLOY.md), "Check the whole path".
+`deploy/e2e.py http://127.0.0.1:8765 --env-file <file> --write --send` walks a running server the way an AI app does (sign-in page, tokens, MCP, the read tools, a draft and a message to the mailbox itself, then revocation), moves the messages it made to Trash and revokes its connection; `http://` is accepted for loopback addresses only. The env file holds `MCP_E2E_ADDRESS` and `MCP_E2E_PASSWORD` and must be readable by you alone. Details: [DEPLOY.md](DEPLOY.md), "Check the whole path".
 
 ### Manual checklist (local server, Claude Code)
 
