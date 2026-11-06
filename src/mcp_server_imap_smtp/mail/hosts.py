@@ -163,8 +163,8 @@ def verified_starttls(sock: socket.socket, host: str, context: ssl.SSLContext,
 
     buffered: whatever the caller's reader already holds past the go-ahead reply. Anything there, or already
     queued on the socket, was sent before the handshake by someone who could be anyone on the path; read
-    after the handshake it would pass for the server's answer (STARTTLS response injection, the client-side
-    twin of CVE-2011-0411). That is refused, as is a context that would not verify the server."""
+    after the handshake it would pass for the server's answer (STARTTLS response injection). That is
+    refused, as is a context that would not verify the server."""
     if context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname:
         raise StartTLSRefused("the TLS context does not verify the server")
     if buffered or _waiting(sock):

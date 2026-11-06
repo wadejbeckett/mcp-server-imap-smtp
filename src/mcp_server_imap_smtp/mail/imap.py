@@ -208,8 +208,8 @@ def _starttls(conn: _Conn, connector: Connector, port: int) -> None:
     upgrade with the verified context, then forget and re-read the capabilities. Nothing but CAPABILITY,
     STARTTLS and (on a refusal) LOGOUT is ever sent in cleartext."""
     if conn.state != "NONAUTH":
-        # PREAUTH on a plain connection: the session is already signed in and cannot be protected (RFC 9051
-        # s7.1.4 says to close it). It is dropped without another word.
+        # PREAUTH on a plain connection: the session is already signed in and can no longer be protected
+        # (RFC 9051 s7.1.4, RFC 8314). It is dropped without another word.
         raise StartTLSRefused("the mail server signed the session in before TLS (PREAUTH)")
     if "STARTTLS" not in conn.capabilities:
         raise _Cleartext(f"the mail server does not offer STARTTLS on port {port}; set imap_security = \"tls\" "

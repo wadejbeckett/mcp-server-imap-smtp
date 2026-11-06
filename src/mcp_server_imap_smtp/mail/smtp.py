@@ -109,7 +109,6 @@ def _starttls(s: _SMTP, connector: Connector, port: int) -> None:
     s.ehlo()
 
 
-
 _ENHANCED = re.compile(r"\s*([245]\.\d{1,3}\.\d{1,3})\b")
 
 
