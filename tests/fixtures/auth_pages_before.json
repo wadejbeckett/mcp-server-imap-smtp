@@ -1,0 +1,1108 @@
+{
+ "manage page signed out": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Add or remove mailboxes in your Example Connector connection, or enter a mailbox's new password, without reconnecting your AI app. Sign in with the main mailbox of your connection: the first mailbox you connected.</p>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"action\" value=\"signin\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" required value=\"\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>\n<button type=\"submit\">Sign in</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, add an empty list": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<p class=\"err\" role=\"alert\">Put one mailbox per line: the address, a space, then the password.</p><section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, add and update": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<p class=\"ok\" role=\"status\">1 mailbox was added and 1 password was updated.</p><section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 3 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td>Working</td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr><tr><td>b@example.test</td><td>Working</td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"b@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, add with a wrong password": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<p class=\"err\" role=\"alert\">Line 1 (b@example.test): address or password incorrect.</p><p class=\"err\" role=\"alert\">Nothing was connected. Passwords are never shown back, so paste the corrected list again.</p><section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, cross-origin post": [
+  {
+   "body": "This form can only be sent from its own page.",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ]
+   ],
+   "status": 403
+  }
+ ],
+ "manage, disconnect": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<p class=\"ok\" role=\"status\">The connection was ended. Remove the connector in your AI app as well, or connect it again to start over.</p><p>No AI app is connected with this mailbox as its main mailbox any more.</p>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, not a main mailbox": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Add or remove mailboxes in your Example Connector connection, or enter a mailbox's new password, without reconnecting your AI app. Sign in with the main mailbox of your connection: the first mailbox you connected.</p>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"action\" value=\"signin\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" required value=\"a@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>\n<p class=\"err\" role=\"alert\">No AI app is connected with a@example.test as its main mailbox. The main mailbox is the first one you entered when you connected. To make a new connection, add the connector in your AI app.</p><button type=\"submit\">Sign in</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, remove": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<p class=\"ok\" role=\"status\">a@example.test was removed.</p><section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 1 mailbox.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, remove the main mailbox": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<p class=\"err\" role=\"alert\">The main mailbox cannot be removed. To stop using it, disconnect the connection.</p><section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, session ended": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Add or remove mailboxes in your Example Connector connection, or enter a mailbox's new password, without reconnecting your AI app. Sign in with the main mailbox of your connection: the first mailbox you connected.</p>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"action\" value=\"signin\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" required value=\"\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>\n<p class=\"err\" role=\"alert\">Your session has ended. Please sign in again.</p><button type=\"submit\">Sign in</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, sign out": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Add or remove mailboxes in your Example Connector connection, or enter a mailbox's new password, without reconnecting your AI app. Sign in with the main mailbox of your connection: the first mailbox you connected.</p>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"action\" value=\"signin\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" required value=\"\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>\n<button type=\"submit\">Sign in</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, signed in": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, unknown connection": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Signed in as me@example.test. Changes apply straight away: your AI app keeps its connection and uses the new list on its next request.</p>\n<p class=\"err\" role=\"alert\">That connection is no longer active.</p><section><h2>Example &lt;AI&gt; App</h2><p>Connected on <DATE>. 2 mailboxes.</p>\n<table><tr><td>me@example.test</td><td>Main mailbox</td><td></td></tr><tr><td>a@example.test</td><td><span class=\"err\">Password rejected on <DATE> <TIME>: enter the new one below</span></td><td><form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"remove\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\"><input type=\"hidden\" name=\"address\" value=\"a@example.test\"><button class=\"minor\" type=\"submit\">Remove</button></form></td></tr></table>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"add\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<label for=\"more-<GRANT1>\">Add mailboxes, or enter a new password for one already here: one per line, the address, a space, then the password</label>\n<textarea id=\"more-<GRANT1>\" name=\"more\" rows=\"6\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Check and save</button></form>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"disconnect\"><input type=\"hidden\" name=\"grant\" value=\"<GRANT1>\">\n<button class=\"minor\" type=\"submit\">Disconnect Example &lt;AI&gt; App from all these mailboxes</button></form></section>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"s\" value=\"<SESSION1>\"><input type=\"hidden\" name=\"action\" value=\"signout\">\n<button class=\"minor\" type=\"submit\">Sign out</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "manage, wrong password": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Manage mailboxes · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:640px;margin:6vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:8em;resize:vertical}\nbutton{margin-top:12px;padding:10px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\nbutton.minor{margin:0;padding:4px 10px;background:none;color:var(--fg);border:1px solid var(--line);font-weight:400}\ntable{width:100%;border-collapse:collapse;margin-top:8px}td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle;word-break:break-all}\ntd form{margin:0}.err{color:#c22}.ok{color:#0a4}p{color:var(--mut)}section{margin-top:32px}</style></head>\n<body><main><h1>Manage your mailboxes</h1><p>Add or remove mailboxes in your Example Connector connection, or enter a mailbox's new password, without reconnecting your AI app. Sign in with the main mailbox of your connection: the first mailbox you connected.</p>\n<form method=\"post\" action=\"manage\"><input type=\"hidden\" name=\"action\" value=\"signin\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" required value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>\n<p class=\"err\" role=\"alert\">Address or password incorrect.</p><button type=\"submit\">Sign in</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "old sign-in address": [
+  {
+   "body": "",
+   "headers": [
+    [
+     "location",
+     "/mail/login?req=abc&x=1"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ]
+   ],
+   "status": 308
+  },
+  {
+   "body": "",
+   "headers": [
+    [
+     "location",
+     "/mail/manage"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ]
+   ],
+   "status": 308
+  }
+ ],
+ "sign-in page with a pending request": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "sign-in page, expired request": [
+  {
+   "body": "This sign-in link has expired. Start again from your AI app.",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ]
+   ],
+   "status": 400
+  }
+ ],
+ "sign-in, cross-origin post": [
+  {
+   "body": "This form can only be sent from its own page.",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ]
+   ],
+   "status": 403
+  }
+ ],
+ "sign-in, duplicate with another password": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">Line 1 (me@example.test): this mailbox is already listed with another password. A mailbox is listed twice with different passwords; keep the right one.<br>Nothing was connected. Passwords are never shown back, so paste the corrected list again.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "sign-in, form too large": [
+  {
+   "body": "The form is too large.",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ]
+   ],
+   "status": 413
+  }
+ ],
+ "sign-in, lockout": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">Address or password incorrect.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">Address or password incorrect.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">Address or password incorrect.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  },
+  {
+   "body": "Too many attempts. Try again in 15 minutes.",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "retry-after",
+     "900"
+    ]
+   ],
+   "status": 429
+  }
+ ],
+ "sign-in, mail server down": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"down@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">The mail server could not be reached. Please try again in a minute.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 503
+  }
+ ],
+ "sign-in, malformed list line": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">Line 1: put the address, a space, then the password.<br>Nothing was connected. Passwords are never shown back, so paste the corrected list again.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "sign-in, not hosted": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">Line 1: Mail for example.org is not hosted by Example Hosting.<br>Nothing was connected. Passwords are never shown back, so paste the corrected list again.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "sign-in, null-origin post": [
+  {
+   "body": "This form can only be sent from its own page.",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+    ]
+   ],
+   "status": 403
+  }
+ ],
+ "sign-in, own-origin post": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">Address or password incorrect.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "sign-in, success": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<meta http-equiv=\"refresh\" content=\"2;url=https://app.example.org/callback?code=<CODE1>&amp;state=st&amp;iss=http%3A%2F%2F127.0.0.1%3A8765\"><title>Connected · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\np{color:var(--mut)}a.b{display:block;margin-top:20px;padding:12px;border-radius:6px;background:var(--acc);color:#fff;font-weight:600;text-align:center;text-decoration:none}</style></head>\n<body><main><h1>2 mailboxes connected</h1><p>Example &lt;AI&gt; App can now use 2 mailboxes, starting with me@example.test.</p><p>To add or remove mailboxes, or change a password, later: <a href=\"http://127.0.0.1:8765/mail/manage\">http://127.0.0.1:8765/mail/manage</a></p>\n<a class=\"b\" href=\"https://app.example.org/callback?code=<CODE1>&amp;state=st&amp;iss=http%3A%2F%2F127.0.0.1%3A8765\">Continue to Example &lt;AI&gt; App</a><p>If nothing happens, click Continue within 5 minutes.</p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "sign-in, too many mailboxes": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">At most 3 mailboxes can be connected at once; this form has 4.<br>Nothing was connected. Passwords are never shown back, so paste the corrected list again.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "sign-in, wrong password in the list": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">Line 1 (a@example.test): address or password incorrect.<br>Nothing was connected. Passwords are never shown back, so paste the corrected list again.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ],
+ "sign-in, wrong password with a list": [
+  {
+   "body": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Connect your mailbox · Example Connector</title><style>\n:root{--bg:#fff;--fg:#111;--mut:#555;--line:#ccc;--acc:#0b5}@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#444}}\nbody{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px}main{max-width:420px;margin:8vh auto}\nlabel{display:block;margin:12px 0 4px}input,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}\ntextarea{font:14px ui-monospace,monospace;min-height:10em;resize:vertical}\nbutton{margin-top:20px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600}\n.err{color:#c22;margin-top:12px}details{margin-top:16px;color:var(--mut)}p{color:var(--mut)}</style></head>\n<body><main><h1>Connect your mailbox</h1><p>Example &lt;AI&gt; App (name supplied by the app) is asking to use your email hosted by Example Hosting. Sign in with the same address and password you use in your mail app.</p>\n<p>When you connect, you will return to <strong>app.example.org</strong>. Only continue if you started this from your own AI app just now.</p>\n<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"req\" value=\"<REQ1>\">\n<label for=\"e\">Email address</label><input id=\"e\" name=\"email\" type=\"email\" autocomplete=\"username\" value=\"me@example.test\">\n<label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\n<h2>Several mailboxes</h2><p>To connect several mailboxes, such as your staff's, paste the whole list here, one mailbox per line: the address, a space, then that mailbox's password. You can then leave the two fields above empty. Up to 2 more. Every mailbox you want must be in this one sign-in: signing in again replaces the earlier list in your AI app. Every password is checked before anything is connected, which can take a minute for many mailboxes.</p>\n<label for=\"more\">Mailboxes, one per line</label><textarea id=\"more\" name=\"more\" rows=\"8\" wrap=\"off\" autocomplete=\"off\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"sales@example.com their-password\"></textarea>\n<p class=\"err\" role=\"alert\">Address or password incorrect.<br>Nothing was connected. Passwords are never shown back, so paste the corrected list again.</p><button type=\"submit\">Connect</button></form><p>Need help? <a href=\"https://help.example.org/\">https://help.example.org/</a> or <a href=\"mailto:help@example.org\">help@example.org</a></p></main></body></html>",
+   "headers": [
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "same-origin"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://app.example.org; frame-ancestors 'none'"
+    ],
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ]
+   ],
+   "status": 200
+  }
+ ]
+}
