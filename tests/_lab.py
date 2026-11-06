@@ -15,6 +15,7 @@ from typing import Iterator
 
 import pytest
 
+from mcp_server_imap_smtp.mail import hosts
 from mcp_server_imap_smtp.mail.hosts import MailServer
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -98,8 +99,14 @@ class _Recording(socket.socket):
 @contextlib.contextmanager
 def record_plaintext(monkeypatch):
     """Yields a list that receives every chunk the connector writes to a mail server before TLS is up (the
-    connector opens its sockets with socket.create_connection, in mail/hosts.py)."""
+    connector opens its sockets with socket.create_connection, in mail/hosts.py, and moves a STARTTLS one
+    onto a hosts._PlainBudget socket, which records too)."""
     recorded: list[bytes] = []
+
+    class Budget(_Recording, hosts._PlainBudget):
+        pass
+    Budget.recorded = recorded
+    monkeypatch.setattr(hosts, "_PlainBudget", Budget)
     real = socket.create_connection
 
     def connect(*args, **kwargs):
