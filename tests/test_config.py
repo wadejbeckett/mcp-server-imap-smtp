@@ -261,6 +261,11 @@ def test_ehlo_name_setting_wins_and_a_server_may_override_it(tmp_path):
     assert [m.ehlo_name for m in s.mail_servers] == ["relay.example.test", "client-side.example.test"]
 
 
+def test_ehlo_name_setting_may_use_capitals(tmp_path):
+    """Domain names are case-insensitive (RFC 5321 s2.4); the name is given as written."""
+    assert load(tmp_path, 'ehlo_name = "Mcp.Example.test"\n' + BASE).mail_servers[0].ehlo_name == "Mcp.Example.test"
+
+
 def test_bad_ehlo_name_stops_start_up(tmp_path):
     with pytest.raises(ValueError, match="ehlo_name"):
         load(tmp_path, 'ehlo_name = "not a name"\n' + BASE)

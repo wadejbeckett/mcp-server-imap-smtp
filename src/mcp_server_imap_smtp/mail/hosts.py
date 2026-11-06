@@ -55,15 +55,22 @@ def address_literal(ip: str) -> str:
 
 
 def is_ehlo_name(name: str) -> bool:
-    """A DNS name or an address literal, the two forms RFC 5321 s4.1.1.1 allows after EHLO."""
-    if is_dns_name(name):
+    """A DNS name or an address literal, the two forms RFC 5321 s4.1.1.1 allows after EHLO. A name may use
+    capitals (domains are case-insensitive, s2.4); a literal may write its address in any form ipaddress
+    reads, with the "IPv6:" tag for IPv6 and no tag for IPv4 (s4.1.3), but no zone such as %eth0."""
+    if not isinstance(name, str):
+        return False
+    if is_dns_name(name.lower()):
         return True
-    if isinstance(name, str) and name.startswith("[") and name.endswith("]"):
-        try:
-            return address_literal(name[1:-1].removeprefix("IPv6:")) == name
-        except ValueError:
-            return False
-    return False
+    if not (name.startswith("[") and name.endswith("]")) or "%" in name:
+        return False
+    inner = name[1:-1]
+    tagged = inner.startswith("IPv6:")
+    try:
+        addr = ipaddress.ip_address(inner.removeprefix("IPv6:"))
+    except ValueError:
+        return False
+    return (addr.version == 6) == tagged
 
 
 @dataclass(frozen=True)
