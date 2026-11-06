@@ -64,7 +64,9 @@ imap_max_session_age = 300
 # host on its IMAP and SMTP ports, 993 and 465 by default (install.sh opens exactly those), and each mail
 # server must not block this server's address for failed logins (docs/DEPLOY.md).
 # imap_security and smtp_security are "tls" (TLS from the first byte, the default) or "starttls" (a
-# plain connection upgraded with STARTTLS, verified before any password; ports 143 and 587 unless set).
+# plain connection upgraded with STARTTLS, verified before any password; ports 143 and 587 unless set in
+# the entry). A top-level imap_port or smtp_port belongs to the top-level mode: an entry with another mode
+# sets its own port.
 [[mail_servers]]
 host = "mail.example.com"
 match_mx = true                  # every domain whose MX is this host or a name under it

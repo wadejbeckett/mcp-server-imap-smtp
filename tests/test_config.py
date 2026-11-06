@@ -240,6 +240,22 @@ def test_legacy_mail_host_takes_top_level_security(tmp_path):
     assert (s.mail_servers[0].smtp_security, s.mail_servers[0].smtp_port) == ("starttls", 587)
 
 
+@pytest.mark.parametrize("top, entry", [("smtp_port = 465", 'smtp_security = "starttls"'),
+                                        ('imap_port = 993', 'imap_security = "starttls"'),
+                                        ('smtp_security = "starttls"\nsmtp_port = 587', 'smtp_security = "tls"')])
+def test_top_level_port_for_another_security_mode_stops_start_up(tmp_path, top, entry):
+    """A top-level port belongs to the top-level mode: an entry with another mode must name its own port,
+    or it would run STARTTLS against the implicit-TLS port (or the reverse) and only time out."""
+    with pytest.raises(ValueError, match="set .*_port in this entry"):
+        load(tmp_path, top + "\n" + HEAD + f'[[mail_servers]]\nhost = "mail1.hosting.example"\n{entry}\n')
+
+
+def test_entry_with_another_mode_and_its_own_port_keeps_it(tmp_path):
+    s = load(tmp_path, "smtp_port = 465\n" + HEAD + '[[mail_servers]]\nhost = "mail1.hosting.example"\n'
+             'smtp_security = "starttls"\nsmtp_port = 2587\n[[mail_servers]]\nhost = "mail.client.example"\n')
+    assert [(m.smtp_security, m.smtp_port) for m in s.mail_servers] == [("starttls", 2587), ("tls", 465)]
+
+
 @pytest.mark.parametrize("line", ['smtp_security = "none"', 'imap_security = "plain"', 'smtp_security = "STARTTLS"'])
 def test_unknown_security_mode_stops_start_up(tmp_path, line):
     with pytest.raises(ValueError, match='"tls" or "starttls"'):

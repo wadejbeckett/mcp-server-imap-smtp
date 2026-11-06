@@ -177,7 +177,8 @@ _SERVER_DEFAULT_KEYS = ("imap_port", "smtp_port", "imap_security", "smtp_securit
 def _mail_servers(raw: dict) -> tuple[MailServer, ...]:
     """Either `[[mail_servers]]` tables or the legacy `mail_host = "..."` (one server for every
     address, no DNS), never both. Top-level imap_port, smtp_port, imap_security and smtp_security are
-    the defaults for each; a port set nowhere follows the server's security mode."""
+    the defaults for each; a port set nowhere follows the server's security mode. A top-level port
+    belongs to the top-level mode, so an entry that chooses another mode must name its own port."""
     defaults = {key: raw.pop(key) for key in _SERVER_DEFAULT_KEYS if key in raw}
     tables, legacy = raw.pop("mail_servers", None), raw.pop("mail_host", None)
     if tables is not None and legacy is not None:
@@ -196,6 +197,13 @@ def _mail_servers(raw: dict) -> tuple[MailServer, ...]:
                              + (f"unknown key(s) {sorted(unknown)}" if unknown else "host is required"))
         if not isinstance(table.get("domains", []), list):
             raise ValueError(f"[[mail_servers]] entry {table['host']!r}: domains must be a list")
+        for service in ("imap", "smtp"):
+            mode, port = f"{service}_security", f"{service}_port"
+            if (port in defaults and port not in table and mode in table
+                    and table[mode] != defaults.get(mode, "tls")):
+                raise ValueError(f"[[mail_servers]] entry {table['host']!r}: {mode} = {table[mode]!r} differs "
+                                 f"from the top-level mode, so the top-level {port} = {defaults[port]!r} does "
+                                 f"not fit it; set {port} in this entry")
         servers.append(MailServer(**{**defaults, **table, "domains": tuple(table.get("domains", ()))}))
     hosts = [s.host for s in servers]
     if len(set(hosts)) != len(hosts):

@@ -21,7 +21,7 @@ host = "mail.client.example"
 domains = ["client.example", "*.client.example"]   # exact domains, or "*.suffix" for every subdomain
 match_mx = false
 max_sessions = 16
-smtp_security = "starttls"       # submission on 587 with STARTTLS; imap_security = "starttls" means IMAP on 143
+smtp_security = "starttls"       # submission on 587 with STARTTLS (unless smtp_port is set); imap_security = "starttls": IMAP on 143
 ```
 
 - **Explicit domains first.** `domains` lists the domains a server hosts. `"*.client.example"` matches every subdomain of client.example, not client.example itself. A lone `"*"` would send every otherwise unmatched address to that server, including addresses you do not host; keep it out of any public deployment.

@@ -29,7 +29,8 @@ max_sessions = 8                 # IMAP and SMTP sessions open on this server at
 host = "mail.client.example"
 domains = ["client.example"]     # exact domains or "*.suffix"; matched before MX
 match_mx = false
-# A server that only offers STARTTLS: "starttls" (submission 587, IMAP 143 unless a port is set). It must
-# be offered and verified before any password; there is no cleartext mode.
+# A server that only offers STARTTLS: "starttls" (submission 587, IMAP 143 unless a port is set here; a
+# top-level port belongs to the top-level mode, so set the port here if you set one there). It must be
+# offered and verified before any password; there is no cleartext mode.
 # smtp_security = "starttls"
 # imap_security = "starttls"
