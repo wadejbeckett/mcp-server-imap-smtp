@@ -22,6 +22,10 @@ It is closed, never pooled, after an error that may have left it broken, when th
 mailbox's password (every connection's kept sessions for that mailbox on that server), when its grant is
 revoked, and when it has been idle or logged in too long.
 
+When the service stops, close() ends it all within a short bound: calls still waiting on a mail server have
+their sockets shut (they fail at once and their sessions are not kept), kept sessions get their LOGOUT,
+and no new session is handed out.
+
 All bookkeeping happens on the event loop thread (no locks): only the network work (log in, check,
 log out and the tool's own commands) runs in worker threads. One session object is used by one call at
 a time: it is handed to a call on the loop, used in that call's worker thread and handed back on the loop
@@ -48,6 +52,8 @@ SESSION_WAIT_SECONDS = 30.0      # how long a call waits for a session before it
 DROPPED_KEEP = 3600.0            # how long a revoked grant is remembered, so calls still running then never pool
 MAX_SESSION_AGE = 300.0          # a kept session is not reused once this long after its login (Settings default)
 CLOSE_WORKERS = 4                # threads logging out sessions the pool lets go; further closes wait their turn
+STOP_LOGOUT_SECONDS = 2.0        # how long close() waits for kept sessions' LOGOUT when the service stops
+STOPPING = "The connector is restarting. Try again in a moment."
 BUSY = "The mail server is busy right now. Try again shortly."
 
 _GRANTED, _NO_SERVER, _NO_MAILBOX = "granted", "server full", "mailbox full"
@@ -155,6 +161,31 @@ class Lease:
         self.auth_failed = False     # the mail server rejected this mailbox's password during the call
         self.reused = False          # the call ran on a pooled session (for tests and diagnostics)
         self._open = False           # session() is in use
+        # Shared with the event loop when the service stops (cut): the session in use, and whether the call
+        # was cut. The lock makes "cut" and "start using a session" exclusive, so none is missed.
+        self._guard = threading.Lock()
+        self._current: Any = None
+        self._cut = False
+
+    def cut(self) -> None:
+        """The service is stopping (any thread): end the mail server work this call is waiting on, and open
+        no further session. The call then fails as on a dropped connection."""
+        with self._guard:
+            self._cut = True
+            session = self._current
+        interrupt = getattr(session, "interrupt", None)
+        if interrupt is not None:
+            try:
+                interrupt()
+            except Exception:
+                pass
+
+    def _use(self, session: Any) -> None:
+        """Record the session this call is about to use (None: none yet); MailError if the call was cut."""
+        with self._guard:
+            if self._cut:
+                raise MailError(STOPPING)
+            self._current = session
 
     def kept_born(self) -> float:
         return self.granted_at if self.keep_born is None else self.keep_born
@@ -197,7 +228,13 @@ class Lease:
             raise RuntimeError("this call's mail session is already open")
         self._open = True
         try:
+            self._use(None)                 # no login once the service is stopping
             session, born = self._ready(open_fresh)
+            try:
+                self._use(session)
+            except MailError:
+                _close(session)
+                raise
             healthy = False
             try:
                 yield session
@@ -209,6 +246,8 @@ class Lease:
                 healthy = True
                 raise
             finally:
+                with self._guard:
+                    self._current = None
                 if healthy and self.pool_key is not None and not getattr(session, "broken", False):
                     if self.keep is not None and self.keep is not session:
                         _close(self.keep)
@@ -230,6 +269,7 @@ class _Server:
         self.rejected: dict[str, float] = {}            # address -> when the server last rejected its password
         self.queues: dict[str, list[Lease]] = {}        # waiting calls per grant (or sign-in), oldest first
         self.active: dict[str, int] = {}                # granted, not yet handed back, per grant
+        self.leases: set[Lease] = set()                 # granted, not yet handed back
         self.served: dict[str, int] = {}                # when each grant was last given a session (tick)
         self.tick = 0
 
@@ -253,6 +293,7 @@ class Sessions:
         self._timer: asyncio.TimerHandle | None = None
         self._timer_loop: asyncio.AbstractEventLoop | None = None
         self._timer_at = 0.0
+        self._stopping = False
 
     @classmethod
     def from_settings(cls, settings) -> "Sessions":
@@ -278,6 +319,8 @@ class Sessions:
         """Wait (fairly) for a session on `server`, hold it for the block, then hand it back. `queue` is the
         fairness key (the grant id); pool_key (grant, address) lets the call reuse and leave a pooled IMAP
         session. Raises ServerBusy if nothing came free by `deadline` (anyio clock) or within `wait` seconds."""
+        if self._stopping:
+            raise ServerBusy(STOPPING)
         if self._loop is None:
             with contextlib.suppress(RuntimeError):
                 self._loop = asyncio.get_running_loop()
@@ -346,6 +389,25 @@ class Sessions:
             self._sweep(srv)
             self._pump(srv)
 
+    async def close(self, wait: float = STOP_LOGOUT_SECONDS) -> None:
+        """The service is stopping (on the event loop, at the ASGI lifespan shutdown): cut every call still
+        holding a session, so a call waiting on a silent mail server ends now rather than at its command
+        timeout; log out every kept session; refuse new leases. Returns once every LOGOUT has finished, or
+        after `wait` seconds: a mail server that does not answer cannot hold the stop. Sessions handed back
+        by cut calls are closed, never kept."""
+        self._stopping = True
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        for srv in self._servers.values():
+            for lease in list(srv.leases):
+                lease.cut()
+            for entry in list(srv.idle):
+                self._evict(srv, entry)
+        with anyio.move_on_after(wait):
+            while any(srv.closing for srv in self._servers.values()):
+                await anyio.sleep(0.02)
+
     def counts(self, host: str) -> dict[str, Any]:
         """Open (or promised) and idle sessions on a server, per mailbox and waiting: for tests and checks."""
         srv = self._servers[host]
@@ -377,6 +439,7 @@ class Sessions:
         srv.tick += 1
         srv.served[lease.queue] = srv.tick
         srv.active[lease.queue] = srv.active.get(lease.queue, 0) + 1
+        srv.leases.add(lease)
         lease.granted, lease.granted_at = True, now
         lease.event.set()
         return _GRANTED
@@ -462,6 +525,7 @@ class Sessions:
         if not lease.granted:
             return
         lease.granted = False
+        srv.leases.discard(lease)
         srv.used -= lease.extra
         srv.active[lease.queue] -= 1
         self._forget_turn(srv, lease.queue)
@@ -479,6 +543,7 @@ class Sessions:
                 self._evict(srv, entry)
         grant = lease.pool_key[0] if lease.pool_key else None
         if (session is not None and grant is not None and self.idle_seconds > 0 and not lease.auth_failed
+                and not self._stopping
                 and grant not in self._dropped and now - born < self.max_age
                 and born > srv.rejected.get(lease.address, float("-inf"))):
             srv.idle.append(_Idle(lease.pool_key, lease.address, session, now, born))

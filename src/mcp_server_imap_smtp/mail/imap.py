@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import imaplib
 import re
+import socket
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -319,6 +320,19 @@ class ImapClient:
     def drop(self) -> None:
         """Shut the connection without LOGOUT (no network wait)."""
         _drop(self.c)
+
+    def interrupt(self) -> None:
+        """From another thread, while a command may be waiting on the mail server (the service is stopping):
+        shut the socket for both directions, so the waiting read ends at once and the session counts as broken.
+        Only the plain socket call is made: closing imaplib's file or the TLS layer here could block on, or
+        pull state from under, the thread that is reading."""
+        sock = getattr(self.c, "sock", None)
+        if sock is None:
+            return
+        try:
+            socket.socket.shutdown(sock, socket.SHUT_RDWR)
+        except (OSError, ValueError):
+            pass
 
     def _timeout(self, seconds):
         """Set the socket timeout; returns the one it replaces (_UNCHANGED if there was nothing to set)."""

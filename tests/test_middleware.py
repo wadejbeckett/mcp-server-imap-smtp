@@ -168,3 +168,62 @@ def test_install_access_log_filter_is_idempotent():
         assert sum(isinstance(f, middleware.StripQuery) for f in log.filters) == 1
     finally:
         log.filters[:] = before
+
+
+async def lifespan_app(seen):
+    """An app whose lifespan records what it receives, as the SDK's Starlette app tears down on shutdown."""
+    async def app(scope, receive, send):
+        assert scope["type"] == "lifespan"
+        while True:
+            message = await receive()
+            seen.append(message["type"])
+            if message["type"] == "lifespan.startup":
+                await send({"type": "lifespan.startup.complete"})
+            else:
+                await send({"type": "lifespan.shutdown.complete"})
+                return
+    return app
+
+
+async def run_lifespan(app):
+    messages = iter([{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}])
+    sent = []
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message["type"])
+    await app({"type": "lifespan", "asgi": {"version": "3.0"}}, receive, send)
+    return sent
+
+
+@pytest.mark.anyio
+async def test_on_stop_runs_before_the_app_tears_down():
+    """The session pool is closed before the SDK's shutdown waits on the calls it cancels."""
+    seen = []
+
+    async def stop():
+        seen.append("stop")
+    app = middleware.OnStop(await lifespan_app(seen), stop)
+    sent = await run_lifespan(app)
+    assert seen == ["lifespan.startup", "stop", "lifespan.shutdown"]
+    assert sent == ["lifespan.startup.complete", "lifespan.shutdown.complete"]
+
+
+@pytest.mark.anyio
+async def test_a_failing_stop_is_logged_and_the_shutdown_goes_on(caplog):
+    seen = []
+
+    async def stop():
+        raise RuntimeError("secret detail")
+    with caplog.at_level(logging.WARNING, logger="mcp_server_imap_smtp.maintenance"):
+        sent = await run_lifespan(middleware.OnStop(await lifespan_app(seen), stop))
+    assert sent[-1] == "lifespan.shutdown.complete"
+    assert "RuntimeError" in caplog.text and "secret detail" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_on_stop_passes_requests_through():
+    sent = await call(middleware.OnStop(ok_app, lambda: None), {})
+    assert sent[1]["body"] == b"ok"

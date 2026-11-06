@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""ASGI middleware around the gateway: hourly database housekeeping, per-IP limits on the anonymous
-OAuth endpoints, and a filter that keeps query strings out of the access log."""
+"""ASGI middleware around the gateway: hourly database housekeeping, closing mail sessions on shutdown,
+per-IP limits on the anonymous OAuth endpoints, and a filter that keeps query strings out of the access log."""
 from __future__ import annotations
 
 import logging
 import time
-from typing import Callable, Mapping
+from typing import Awaitable, Callable, Mapping
 
 import anyio
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .ratelimit import RateLimiter, client_key
 
@@ -34,6 +34,31 @@ class Maintenance:
             except Exception:
                 log.exception("purge failed")
         await self.app(scope, receive, send)
+
+
+class OnStop:
+    """Runs stop() when the server announces the lifespan shutdown, before the app inside hears of it. The
+    MCP SDK's shutdown cancels the calls still running and waits for them, and a call cannot end while its
+    worker thread waits on a mail server; stop() (Sessions.close) ends that wait first. A failing stop() is
+    logged by exception type only and the shutdown goes on."""
+
+    def __init__(self, app: ASGIApp, stop: Callable[[], Awaitable[object]]):
+        self.app, self.stop = app, stop
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "lifespan":
+            await self.app(scope, receive, send)
+            return
+
+        async def receive_after_stop() -> Message:
+            message = await receive()
+            if message["type"] == "lifespan.shutdown":
+                try:
+                    await self.stop()
+                except Exception as exc:
+                    log.warning("closing mail sessions on shutdown failed (%s)", exc.__class__.__name__)
+            return message
+        await self.app(scope, receive_after_stop, send)
 
 
 class RequestLimits:

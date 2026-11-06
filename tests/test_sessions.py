@@ -1283,3 +1283,130 @@ def test_shipped_configurations_load(tmp_path):
     assert {m.host: m.max_sessions for m in s.mail_servers} == {"mail.example.com": 8, "mail.client.example": 16}
     assert s.imap_max_session_age == 300
     load(tmp_path, (root / "config.example.toml").read_text().replace('"./mcp-server-imap-smtp.sqlite"', '"{db}"'))
+
+# --- stopping the service ---------------------------------------------------------------------------------
+
+class Blocked(Kept):
+    """A session whose command is waiting on the mail server until interrupt() (ImapClient.interrupt)."""
+
+    def __init__(self, name):
+        super().__init__(name)
+        self.waiting, self.interrupted = threading.Event(), threading.Event()
+
+    def command(self):
+        self.waiting.set()
+        if not self.interrupted.wait(10):
+            raise AssertionError("never interrupted")
+        raise OSError("connection shut")
+
+    def interrupt(self):
+        self.interrupted.set()
+
+
+@pytest.mark.anyio
+async def test_close_logs_out_every_kept_session_and_keeps_none_afterwards():
+    s, server, closed = make(cap=4)
+    a, b = Kept("a"), Kept("b")
+    await keep(s, server, "g1", "a@x.example", a)
+    await keep(s, server, "g2", "b@x.example", b)
+    assert s.counts(HOST)["idle"] == 2
+    await s.close()
+    assert sorted(k.name for k in closed) == ["a", "b"]
+    assert s.counts(HOST) == {"used": 0, "idle": 0, "boxes": {}, "waiting": 0}
+    with pytest.raises(ServerBusy):             # nothing new starts once the service is stopping
+        async with s.lease(server, "g1", "a@x.example", pool_key=("g1", "a@x.example")):
+            pass
+
+
+@pytest.mark.anyio
+async def test_close_interrupts_a_call_waiting_on_the_mail_server_and_its_session_is_not_kept():
+    s, server, closed = make(cap=2)
+    session = Blocked("busy")
+    failures = []
+
+    def work(lease):
+        try:
+            with lease.session("a@x.example", lambda: session) as c:
+                c.command()
+        except OSError as exc:
+            failures.append(exc)
+
+    async def call():
+        async with s.lease(server, "g", "a@x.example", pool_key=("g", "a@x.example")) as lease:
+            await anyio.to_thread.run_sync(work, lease)
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(call)
+        await anyio.to_thread.run_sync(session.waiting.wait, 5)
+        with anyio.fail_after(5):
+            await s.close()
+    assert failures and session.interrupted.is_set()
+    assert session.closed and s.counts(HOST) == {"used": 0, "idle": 0, "boxes": {}, "waiting": 0}
+
+
+@pytest.mark.anyio
+async def test_a_call_that_finishes_after_close_hands_its_session_back_for_logout_not_the_pool():
+    s, server, closed = make(cap=2)
+    healthy = Kept("late")
+    async with s.lease(server, "g", "a@x.example", pool_key=("g", "a@x.example")) as lease:
+        await s.close()
+        lease.keep = healthy
+    assert closed == [healthy] and s.counts(HOST)["idle"] == 0
+
+
+def test_a_call_cut_by_close_opens_no_session():
+    lease = Lease("g", "a@x.example", ("g", "a@x.example"), 0, True)
+    lease.cut()
+    opened = []
+    with pytest.raises(MailError):
+        with lease.session("a@x.example", lambda: opened.append(1) or Kept("fresh")):
+            pass
+    assert opened == []
+
+
+@pytest.mark.anyio
+async def test_close_waits_for_logouts_only_up_to_its_bound():
+    """A mail server that never answers LOGOUT cannot hold the stop: close gives up after `wait`."""
+    gate = threading.Event()
+
+    def slow_closer(sessions, done):
+        threading.Thread(target=lambda: (gate.wait(10), done()), daemon=True).start()
+    s, server, _ = make(cap=2, closer=slow_closer)
+    await keep(s, server, "g", "a@x.example", Kept("a"))
+    started = time.monotonic()
+    await s.close(wait=0.3)
+    assert 0.25 < time.monotonic() - started < 2
+    gate.set()
+
+
+@pytest.mark.anyio
+async def test_close_waits_for_logouts_already_under_way():
+    gate = threading.Event()
+    finished = []
+
+    def closer(sessions, done):
+        def work():
+            gate.wait(5)
+            finished.append(sessions)
+            done()
+        threading.Thread(target=work, daemon=True).start()
+    s, server, _ = make(cap=2, closer=closer)
+    await keep(s, server, "g", "a@x.example", Kept("a"))
+    threading.Timer(0.2, gate.set).start()
+    await s.close(wait=5)
+    assert finished and s.counts(HOST)["used"] == 0
+
+
+def test_interrupt_wakes_a_command_waiting_on_a_silent_server(monkeypatch):
+    """ImapClient.interrupt, from another thread, ends a read the mail server never answers at once (not
+    after the 30 s command timeout); the session is then broken and never reused."""
+    srv = ScriptedServer(silent)
+    monkeypatch.setattr(Connector, "tls_connect", lambda self, port, timeout=10.0: srv.client)
+    try:
+        c = ImapClient.open(MailServer(HOST), "me@x.example", "pw")
+        threading.Timer(0.2, c.interrupt).start()
+        started = time.monotonic()
+        with pytest.raises((imaplib.IMAP4.abort, OSError)):
+            c.c.noop()
+        assert time.monotonic() - started < 3 and c.broken
+    finally:
+        srv.close()
