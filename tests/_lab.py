@@ -6,8 +6,12 @@ import imaplib
 import os
 import socket
 import ssl
+import subprocess
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
@@ -92,3 +96,64 @@ def record_commands(conn: imaplib.IMAP4):
         yield sent
     finally:
         conn._command = original
+
+
+def free_port() -> int:
+    """A loopback TCP port nothing listens on right now."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _toml(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml(v) for v in value) + "]"
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+@contextlib.contextmanager
+def running_connector(profile: Profile, workdir: Path, **settings) -> Iterator[str]:
+    """Start the real connector (its `main`, in a subprocess) on a free loopback port, signing in to
+    `profile`'s mail server and trusting only the lab CA; yield its base URL (http://127.0.0.1:PORT, the MCP
+    endpoint at /mail) and stop it afterwards. Extra keyword arguments become top-level config keys. The
+    server's output goes to workdir/connector.log, shown when it does not start."""
+    port = free_port()
+    base = f"http://127.0.0.1:{port}"
+    config = {"issuer_url": base, "mail_resource_url": f"{base}/mail", "db_path": str(workdir / "connector.sqlite"),
+              "listen_port": port, "operator_name": "Lab", "product_name": "Lab Mail", **settings}
+    lines = [f"{k} = {_toml(v)}" for k, v in config.items()]
+    lines += ["[[mail_servers]]", f"host = {_toml(HOST)}", f"imap_port = {profile.imaps}",
+              f"smtp_port = {profile.smtps}", 'domains = ["*"]', "match_mx = false"]
+    (workdir / "connector.toml").write_text("\n".join(lines) + "\n")
+    env = {k: v for k, v in os.environ.items() if k != "SSL_CERT_DIR"}
+    env["SSL_CERT_FILE"] = str(CA_FILE)
+    log = open(workdir / "connector.log", "wb")
+    proc = subprocess.Popen([sys.executable, "-c", "from mcp_server_imap_smtp.app import main; main()",
+                             "--config", str(workdir / "connector.toml")], stdout=log, stderr=subprocess.STDOUT,
+                            env=env, cwd=workdir)
+    try:
+        deadline = time.monotonic() + 30
+        while True:
+            if proc.poll() is not None:
+                pytest.fail(f"the connector exited ({proc.returncode}):\n{(workdir / 'connector.log').read_text()[-3000:]}")
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=1).close()
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    pytest.fail(f"the connector did not listen within 30 s:\n"
+                                f"{(workdir / 'connector.log').read_text()[-3000:]}")
+                time.sleep(0.2)
+        yield base
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        log.close()
