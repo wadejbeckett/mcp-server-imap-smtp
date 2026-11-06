@@ -240,6 +240,10 @@ While testing sign-in by hand, wrong passwords and refused domains count against
 
 3. Run `MCP_TEST_ENV_FILE=~/.config/mcp-imap-smtp-test.env .venv/bin/pytest -m integration`. Without `MCP_TEST_IMAP_HOST`, `MCP_TEST_ADDRESS` and `MCP_TEST_PASSWORD` the tests skip, and the shared-mailbox tests skip without the shared pair. They only use the folder `mcp-imap-smtp-tests`, tag subjects `mcp-imap-smtp-test <ns>`, send only to the test address itself, never touch untagged messages and never expunge; tagged leftovers end up in `mcp-imap-smtp-tests` or Trash.
 
+### Scripted check of a running server
+
+`deploy/e2e.py http://127.0.0.1:8765 --env-file <file> --write --send` walks a running server the way an AI app does (sign-in page, tokens, MCP, the read tools, a draft and a message to the mailbox itself, then revocation) and removes everything it made; `http://` is accepted for loopback addresses only. The env file holds `MCP_E2E_ADDRESS` and `MCP_E2E_PASSWORD` and must be readable by you alone. Details: [DEPLOY.md](DEPLOY.md), "Check the whole path".
+
 ### Manual checklist (local server, Claude Code)
 
 Run the server locally, connect Claude Code as above and sign in with the test mailbox. Then:

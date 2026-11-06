@@ -13,6 +13,7 @@ The kit lives in `deploy/`:
 | `config.prod.toml.template` | Becomes `/etc/$NAME/config.toml` on the first install only. |
 | `backup.sh`, `backup.service.unit`, `backup.timer.unit` | Nightly online SQLite backup. Installed as `$NAME-backup`, `$NAME-backup.service` and `$NAME-backup.timer`. |
 | `smoke.sh` | Credential-free checks against a deployed URL. |
+| `e2e.py` | End-to-end check of a running instance with a real mailbox (section 5). Run from any machine with Python 3.11 or later; not installed on the server. |
 
 ### The install name
 
@@ -107,6 +108,23 @@ It checks: certificate valid and more than 14 days from expiry; `http://` redire
 
 Before DNS points at the server: `SMOKE_RESOLVE=mcp.example.com:443:<server address> deploy/smoke.sh https://mcp.example.com`. The script is also on the server as `mcp-server-imap-smtp-smoke`.
 
+### Check the whole path
+
+`smoke.sh` never signs in. `deploy/e2e.py` does what an AI app does, with a mailbox you choose: it registers a client, signs in through the sign-in page with PKCE, exchanges and refreshes the tokens, opens an MCP session, lists the tools and reads the newest message in INBOX. It also checks the refusals that matter: 401 without a token, and 403 for a sign-in form posted from another site (that attempt sends no password). It needs a mailbox the gateway can sign in to, so on a mail server behind a firewall run it after section 6.
+
+```bash
+install -m 600 /dev/null ~/e2e.env    # then add MCP_E2E_ADDRESS=... and MCP_E2E_PASSWORD=... with an editor
+deploy/e2e.py https://mcp.example.com --env-file ~/e2e.env --write --send
+```
+
+The address and password come only from that file (which only you may read; the script refuses it otherwise) or from the `MCP_E2E_ADDRESS` and `MCP_E2E_PASSWORD` environment variables, never from the command line, and are never printed. Three switches add to the walk:
+
+- `--write` saves a draft with a small text attachment and an inline image, reads both back byte for byte, sets and clears a flag, then removes the draft.
+- `--send` sends a message to the mailbox itself, waits up to a minute for it to arrive, reads it and removes it and its Sent copy. It is skipped when sending is off (`send_mode`).
+- `--keep` leaves the connection in place at the end instead of revoking it.
+
+It changes only messages it created (each carries a unique token in its subject, checked again before every change). Removing means `mail_delete` where the instance offers it, otherwise a move to Trash. At the end it revokes the connection and checks that the access token is refused, so it leaves no connection and no mail behind except in Trash. Every check prints PASS, FAIL or SKIP; any FAIL exits 1. `--json` prints a summary for monitoring (no secrets, no mail content), `--cafile` trusts a private CA, and `--mail-path` is for a service mounted somewhere other than `/mail`. An `http://` URL is accepted only for a loopback address, for a local instance.
+
 ## 6. Trust the gateway on each mail server, then check mail from the gateway (go-live gate)
 
 Every user's IMAP and SMTP sign-in reaches the mail servers from the gateway's one address, so anything on a mail server that blocks that address cuts off every user on that server at once. Two kinds of protection commonly do it:
@@ -158,6 +176,7 @@ ssh $VPS 'tar -xzf /root/mcp-server-imap-smtp-<release>.tar.gz -C /root && \
       --setenv "SSH_CONNECTION=$SSH_CONNECTION" /root/mcp-server-imap-smtp-<release>/install.sh; \
     rc=$?; cat /root/mcp-server-imap-smtp-install.log; exit $rc'
 deploy/smoke.sh https://mcp.example.com
+deploy/e2e.py https://mcp.example.com --env-file ~/e2e.env --write --send
 ```
 
 No email or agreement is needed once the certificate exists. Use the same `NAME` as the first install. The new release gets its own virtualenv and is checked against the live config; only after nginx and the certificate are done does the symlink switch and the service restart (a few seconds; connected clients keep their tokens). If the new release does not answer within 30 seconds, `install.sh` switches back to the previous one and fails. Old releases are pruned after the new one answers: the new one, the one it replaced and the newest others up to three in total are kept (`KEEP_RELEASES`). `config.toml` is never overwritten: new settings from a newer template must be added by hand.
