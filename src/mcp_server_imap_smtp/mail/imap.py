@@ -9,13 +9,28 @@ import re
 import socket
 import ssl
 import time
-from dataclasses import dataclass
-from datetime import date
 from email.parser import BytesHeaderParser
 from email import policy as email_policy
 
 from . import utf7
 from .hosts import Connector, MailServer, StartTLSRefused, reader_buffered
+from .imap_ext.drafts import Drafts
+from .imap_ext.expunge import Expunge
+from .imap_ext.folder_admin import FolderAdmin
+from .imap_ext.ids import Ids
+from .imap_ext.keywords import Keywords
+from .imap_ext.listing import Listing
+from .imap_ext.quota import QuotaAcl
+from .imap_ext.sections import Sections
+from .imap_ext.sort import Sort
+from .imap_ext.sync import Sync
+from .imap_ext.thread import Threading
+# Re-exported: the rest of the connector and the tests import these from here.
+from .imap_types import Folder, MailAuthError, MailBusy, MailError, SearchQuery  # noqa: F401
+from .imap_wire import (  # noqa: F401
+    _APPENDUID, _BUSY_LOGIN, _CTRL, _DIGITS, _FLAG, _LIST, _RESP_CODE, _TRANSIENT_LOGIN, _UNSELECTABLE,
+    _check_flags, _imap_date, _login_kind, _mbox, _parse_sexp, _quote, _uid_seq, limit_value,
+)
 from .resolve import normalise_address
 
 SPECIAL = {"\\sent": "sent", "\\drafts": "drafts", "\\trash": "trash", "\\junk": "junk", "\\archive": "archive"}
@@ -29,134 +44,11 @@ ROLE_NAMES = {"inbox": "inbox",
               "junk": "junk", "spam": "junk", "junk e-mail": "junk", "junk email": "junk", "junk mail": "junk",
               "archive": "archive", "archives": "archive"}
 _PERSONAL_PREFIXES = ("INBOX.", "INBOX/")   # common personal-namespace prefixes, removed when this server has none
-_LIST = re.compile(rb'\((?P<flags>[^)]*)\) (?P<delim>"[^"]*"|NIL) (?P<name>.+)$')
-_CTRL = re.compile(r"[\r\n\0]")
-_FLAG = re.compile(r"\\?[A-Za-z0-9$_.-]+")
-_UNSELECTABLE = {"\\noselect", "\\nonexistent"}
 
 
 TIMEOUT = 30          # seconds a command may wait for the mail server
 CHECK_TIMEOUT = 5     # seconds the check of a kept session, and LOGOUT, may wait: a silent server costs no more
 _UNCHANGED = object()
-
-_TRANSIENT_LOGIN = re.compile(r"\[(UNAVAILABLE|SERVERBUG|INUSE|LIMIT)\]", re.IGNORECASE)
-_BUSY_LOGIN = re.compile(r"\[(INUSE|LIMIT)\]", re.IGNORECASE)   # may be sent after the password was accepted
-
-class MailError(Exception):
-    pass
-
-
-class MailAuthError(MailError):
-    pass
-
-
-class MailBusy(MailError):
-    """[INUSE] or [LIMIT] at login: not a wrong password, but possibly sent only after a right one."""
-
-
-@dataclass(frozen=True)
-class Folder:
-    name: str
-    delimiter: str
-    flags: tuple[str, ...]
-    special: str | None
-
-
-@dataclass(frozen=True)
-class SearchQuery:
-    text: str | None = None
-    from_: str | None = None
-    to: str | None = None
-    subject: str | None = None
-    since: date | None = None
-    before: date | None = None
-    unread: bool | None = None
-    flagged: bool | None = None
-
-
-def _quote(s: str) -> str:
-    if _CTRL.search(s):
-        raise MailError("CR, LF and NUL are not allowed in IMAP arguments")
-    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def _mbox(name: str) -> str:
-    if _CTRL.search(name):
-        raise MailError("CR, LF and NUL are not allowed in folder names")
-    return _quote(utf7.encode(name))
-
-
-def _check_flags(flags) -> None:
-    for f in flags:
-        if not _FLAG.fullmatch(f):
-            raise MailError(f"invalid flag {f!r}")
-
-
-def _uid_seq(uids) -> str:
-    if not uids:
-        raise MailError("no messages given")
-    for u in uids:
-        if type(u) is not int or u <= 0:
-            raise MailError("message ids must be positive integers")
-    return ",".join(map(str, uids))
-
-
-def _parse_sexp(data: bytes) -> list:
-    """Parse the parenthesised lists, quoted strings and NIL atoms of an IMAP response into
-    nested Python lists, bytes and None. Raises ValueError on malformed input."""
-    pos = 0
-
-    def skip_space():
-        nonlocal pos
-        while data[pos:pos + 1] == b" ":
-            pos += 1
-
-    def item():
-        nonlocal pos
-        skip_space()
-        ch = data[pos:pos + 1]
-        if ch == b"(":
-            pos += 1
-            out = []
-            while True:
-                skip_space()
-                if data[pos:pos + 1] == b")":
-                    pos += 1
-                    return out
-                out.append(item())
-        if ch == b'"':
-            pos += 1
-            buf = bytearray()
-            while True:
-                c = data[pos:pos + 1]
-                if not c:
-                    raise ValueError("unterminated string")
-                if c == b"\\":
-                    buf += data[pos + 1:pos + 2]
-                    pos += 2
-                elif c == b'"':
-                    pos += 1
-                    return bytes(buf)
-                else:
-                    buf += c
-                    pos += 1
-        m = re.compile(rb'[^\s()"]+').match(data, pos)
-        if not m:
-            raise ValueError("unexpected input")
-        pos = m.end()
-        return None if m.group().upper() == b"NIL" else m.group()
-
-    items = []
-    while True:
-        skip_space()
-        if pos >= len(data):
-            return items
-        items.append(item())
-
-
-def _imap_date(d: date) -> str:
-    return d.strftime("%d-%b-%Y")
-
 
 class _Conn(imaplib.IMAP4):
     """IMAP4 over a socket that Connector has already opened and verified. The base class's
@@ -225,19 +117,6 @@ def _starttls(conn: _Conn, connector: Connector, port: int) -> None:
     conn.use_tls(connector.starttls(conn.sock, buffered=conn.buffered()))
 
 
-def _login_kind(caps, password: str) -> str | None:
-    """How to sign in, from the capabilities read over TLS: AUTHENTICATE PLAIN in one line when the server
-    offers it with SASL-IR (RFC 4959); else LOGIN, unless LOGINDISABLED or the password is not ASCII (LOGIN
-    is ASCII-only); else AUTHENTICATE PLAIN with a continuation. None: the server allows none of these."""
-    if "AUTH=PLAIN" in caps and "SASL-IR" in caps:
-        return "sasl-ir"
-    if password.isascii() and "LOGINDISABLED" not in caps:
-        return "login"
-    if "AUTH=PLAIN" in caps or "LOGINDISABLED" not in caps:
-        return "plain"
-    return None
-
-
 def _sign_in(conn: _Conn, kind: str, address: str, password: str) -> None:
     if kind == "login":
         conn.login(address, password)
@@ -269,8 +148,6 @@ def _logout(conn) -> None:
         _drop(conn)
 
 
-_RESP_CODE = re.compile(r"\s*\[([A-Za-z-]+)")
-_APPENDUID = re.compile(rb"\[APPENDUID (\d+) (\d+)\]", re.IGNORECASE)
 _CODE_REASONS = {
     "NONEXISTENT": "it does not exist", "TRYCREATE": "the folder does not exist",
     "ALREADYEXISTS": "it already exists", "NOPERM": "no permission", "OVERQUOTA": "the mailbox is over quota",
@@ -280,17 +157,7 @@ _CODE_REASONS = {
 }
 
 
-_DIGITS = re.compile(r"[0-9]{1,15}")
-
-
-def limit_value(text: str) -> int | None:
-    """A size limit a server announced (SMTP SIZE, IMAP APPENDLIMIT) as bytes; None for anything but ASCII
-    digits, and for 0, which both define as no fixed limit."""
-    text = (text or "").strip()
-    return int(text) if _DIGITS.fullmatch(text) and int(text) > 0 else None
-
-
-class ImapClient:
+class ImapClient(Expunge, FolderAdmin, Listing, Keywords, Sort, Threading, Sync, QuotaAcl, Drafts, Sections, Ids):
     def __init__(self, conn: imaplib.IMAP4, address: str):
         self.c, self.address = conn, address
         self._folders: list[Folder] | None = None
