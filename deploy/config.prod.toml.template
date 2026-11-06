@@ -61,8 +61,10 @@ imap_max_session_age = 300
 # Mail servers the connector may sign in to (docs/RUNNING.md, "Mail servers"). An address whose domain
 # matches none of them is refused before any password is tried. These tables stay at the end: TOML puts
 # every key after a [[mail_servers]] line into that table. This server needs outbound access to each
-# host on 993 and 465 (install.sh opens exactly those), and each mail server must not block this
-# server's address for failed logins (docs/DEPLOY.md).
+# host on its IMAP and SMTP ports, 993 and 465 by default (install.sh opens exactly those), and each mail
+# server must not block this server's address for failed logins (docs/DEPLOY.md).
+# imap_security and smtp_security are "tls" (TLS from the first byte, the default) or "starttls" (a
+# plain connection upgraded with STARTTLS, verified before any password; ports 143 and 587 unless set).
 [[mail_servers]]
 host = "mail.example.com"
 match_mx = true                  # every domain whose MX is this host or a name under it
@@ -72,3 +74,4 @@ max_sessions = 8                 # IMAP and SMTP sessions open on this server at
 host = "mail.client.example"
 domains = ["client.example"]     # exact domains or "*.suffix", matched before MX
 max_sessions = 16
+# smtp_security = "starttls"     # this server offers submission on 587 with STARTTLS only

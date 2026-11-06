@@ -23,7 +23,7 @@ The kit lives in `deploy/`:
 
 - Debian 13 (trixie) or Debian 12 (bookworm), nothing else installed. 1 vCPU, 2 GB RAM, 20 GB disk is plenty.
 - A public IPv4 address (IPv6 too if available) and root SSH access with a key.
-- Inbound TCP 22 (or your SSH port), 80 and 443 open in the provider's firewall or security group. Outbound must reach every configured mail server (`[[mail_servers]]` in the config, or the legacy `mail_host`) on its IMAP and SMTP ports, normally 993 and 465. It must also reach DNS on 53 for MX lookups, PyPI on 443 (installs only), Let's Encrypt on 443, the internet on 443 for client metadata documents (chatgpt.com, claude.ai), and the internet on 443 for images in HTML mail, which are fetched to embed them (public addresses only). Default egress rules allow all of this.
+- Inbound TCP 22 (or your SSH port), 80 and 443 open in the provider's firewall or security group. Outbound must reach every configured mail server (`[[mail_servers]]` in the config, or the legacy `mail_host`) on its IMAP and SMTP ports: 993 and 465 by default, 143 and 587 for a server set to `"starttls"`, or the ports its entry names. It must also reach DNS on 53 for MX lookups, PyPI on 443 (installs only), Let's Encrypt on 443, the internet on 443 for client metadata documents (chatgpt.com, claude.ai), and the internet on 443 for images in HTML mail, which are fetched to embed them (public addresses only). Default egress rules allow all of this.
 
 `install.sh` uses Debian archive packages only: `python3`, `python3-venv`, `nginx`, `certbot`, `ufw`, `unattended-upgrades`, `poppler-utils`, `sqlite3`, `rsync`, `curl`, `openssl`, `ca-certificates`, `iproute2`. Python libraries come from PyPI into a virtualenv, pinned with hashes.
 
@@ -130,7 +130,7 @@ It changes only messages it created (each carries a unique token in its subject,
 Every user's IMAP and SMTP sign-in reaches the mail servers from the gateway's one address, so anything on a mail server that blocks that address cuts off every user on that server at once. Two kinds of protection commonly do it:
 
 - **Login-failure blocking** (fail2ban, a control panel's IP banning, or a similar tool) counts failed logins per source IP. A few users mistyping passwords (or one attacker) would ban the gateway. The gateway has its own per-IP, per-mailbox and per-server sign-in limits (see `login_failures` and `host_login_failures` in [RUNNING.md](RUNNING.md)), so the mail server does not need to police this address.
-- **IP reputation blocking** (for example Imunify360's cloud lists, or a firewall fed by public block lists) can silently drop every non-web port, 993 and 465 included, for any address on those lists, while the login-failure tool shows nothing. Datacenter and VPS addresses often land on such lists.
+- **IP reputation blocking** (for example Imunify360's cloud lists, or a firewall fed by public block lists) can silently drop every non-web port, the mail ports included, for any address on those lists, while the login-failure tool shows nothing. Datacenter and VPS addresses often land on such lists.
 
 On each mail server, with the gateway's public IPv4 and, if it has one, its IPv6 address (`install.sh` prints them as "Global addresses"; behind a floating IP or NAT, use the public address the mail server sees):
 
@@ -148,13 +148,15 @@ On each mail server, with the gateway's public IPv4 and, if it has one, its IPv6
    done
    ```
 
-   Both must print the TLS session details and `port ... ok`. A hang or timeout means the mail server (or a firewall in front of it) is dropping the gateway; a certificate error means something else answered, or the `host` in the configuration is not the name on the mail server's certificate. The `install.sh` summary runs the same handshake for every configured server ("Mail servers TLS"). Then sign in once with a real test mailbox from Claude Code (section 7) before onboarding any users.
+   For a server set to `"starttls"`, check its own ports with the protocol named, for example `-connect mail.example.com:587 -starttls smtp` and `-connect mail.example.com:143 -starttls imap`.
+
+   Both must print the TLS session details and `port ... ok`. A hang or timeout means the mail server (or a firewall in front of it) is dropping the gateway; a certificate error means something else answered, or the `host` in the configuration is not the name on the mail server's certificate. The `install.sh` summary runs the same handshake for every configured server, on each service's configured port and with STARTTLS where the server is set to `"starttls"` ("Mail servers TLS"). Then sign in once with a real test mailbox from Claude Code (section 7) before onboarding any users.
 
 Recheck these entries if the gateway's address ever changes.
 
 ### 6a. Mail servers behind a firewall
 
-Some mail servers, for example a customer's own server, sit behind a firewall that only lets known addresses reach IMAP and SMTP. The connector signs in from the gateway, so its public IPv4 address and, if it has one, its IPv6 address must be on that firewall's allowlist for the server's IMAP and SMTP ports, normally 993 and 465. Until they are, sign-in for that server's addresses fails with "The mail server could not be reached."
+Some mail servers, for example a customer's own server, sit behind a firewall that only lets known addresses reach IMAP and SMTP. The connector signs in from the gateway, so its public IPv4 address and, if it has one, its IPv6 address must be on that firewall's allowlist for the server's configured IMAP and SMTP ports (993 and 465 by default; 143 and 587 with `"starttls"`). Until they are, sign-in for that server's addresses fails with "The mail server could not be reached."
 
 1. Add both addresses to the firewall for those ports. Where someone else owns the server, get their agreement first.
 2. Run the go-live check from section 6, step 6, on the gateway, with that server's host.

@@ -187,14 +187,15 @@ s = load_settings(Path(sys.argv[1]))
 for v in (s.listen_host, s.listen_port, s.public_host, s.mail_path, s.db_path, int(s.trusted_proxy),
           s.forwarded_allow_ips, s.issuer_url, int(s.allow_loopback_redirects), s.mail_resource_url,
           urlparse(s.mail_resource_url).netloc,
-          " ".join(f"{m.host}:{m.imap_port}:{m.smtp_port}" for m in s.mail_servers)):
+          " ".join(f"{m.host}:{m.imap_port}:{m.smtp_port}:{m.imap_security}:{m.smtp_security}"
+                   for m in s.mail_servers)):
     print(v)
 PY
 )
 (( ${#CFG[@]} == 12 )) || die "$CONFIG does not load (see the Python error above)"
 LISTEN_HOST="${CFG[0]}" LISTEN_PORT="${CFG[1]}" PUBLIC_HOST="${CFG[2]}" MAIL_PATH="${CFG[3]}" DB_PATH="${CFG[4]}"
 TRUSTED_PROXY="${CFG[5]}" FORWARDED_ALLOW="${CFG[6]}" ISSUER="${CFG[7]}" LOOPBACK="${CFG[8]}"
-MAIL_RESOURCE="${CFG[9]}" MAIL_RESOURCE_HOST="${CFG[10]}" MAIL_SERVERS="${CFG[11]}"   # host:imap:smtp, space-separated
+MAIL_RESOURCE="${CFG[9]}" MAIL_RESOURCE_HOST="${CFG[10]}" MAIL_SERVERS="${CFG[11]}"   # host:imap:smtp:imap_security:smtp_security, space-separated
 [[ $PUBLIC_HOST == "$MCP_HOSTNAME" ]] || die "issuer_url host in $CONFIG is '$PUBLIC_HOST' but MCP_HOSTNAME is '$MCP_HOSTNAME'"
 [[ $ISSUER == https://* ]] || die "issuer_url in $CONFIG must be https://"
 [[ $MAIL_RESOURCE == https://* ]] || die "mail_resource_url in $CONFIG must be https://"
@@ -236,7 +237,7 @@ else
     ufw allow out 443/tcp comment 'https out (pypi, acme, client metadata)' >/dev/null
     mail_rules=0
     for entry in $MAIL_SERVERS; do
-        IFS=: read -r mh mi ms <<<"$entry"
+        IFS=: read -r mh mi ms msi mss <<<"$entry"
         mapfile -t maddrs < <(getent ahosts "$mh" | awk '{print $1}' | sort -u)
         (( ${#maddrs[@]} )) || warn "mail server $mh does not resolve; no outbound rule added for it"
         for a in "${maddrs[@]}"; do
@@ -471,14 +472,21 @@ cert_issuer="$(openssl x509 -noout -issuer -in "$CERT" 2>/dev/null | sed 's/^iss
 db_state="not created yet (first sign-in creates it)"
 [[ -f $DB_PATH ]] && db_state="$(stat -c '%U:%G %a %s bytes' "$DB_PATH")"
 mapfile -t addrs < <(ip -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
-# TLS handshake only (no sign-in) to each configured mail server from this server's own address. FAILED
-# usually means the mail server's firewall or ban list drops this address: docs/DEPLOY.md sections 6 and 6a.
-mail_tls() { timeout 15 openssl s_client -connect "$1:$2" -servername "$1" -verify_hostname "$1" \
-                 -verify_return_error -brief </dev/null; }
+# TLS handshake only (no sign-in) to each configured mail server from this server's own address, on each
+# service's own port and in its own mode (STARTTLS first where the configuration says so). FAILED usually
+# means the mail server's firewall or ban list drops this address: docs/DEPLOY.md sections 6 and 6a.
+# mail_tls_args host port tls|starttls imap|smtp: the openssl s_client arguments, one per line.
+mail_tls_args() {
+    local args=(-connect "$1:$2" -servername "$1" -verify_hostname "$1" -verify_return_error -brief)
+    [[ $3 == starttls ]] && args+=(-starttls "$4")
+    printf '%s\n' "${args[@]}"
+}
+mail_tls() { local args; mapfile -t args < <(mail_tls_args "$@"); timeout 15 openssl s_client "${args[@]}" </dev/null; }
 mail_lines=""
 for entry in $MAIL_SERVERS; do
-    IFS=: read -r mh mi ms <<<"$entry"
-    mail_lines+="$(printf '\n  %s  IMAPS %s %s, SMTPS %s %s' "$mh" "$mi" "$(check mail_tls "$mh" "$mi")" "$ms" "$(check mail_tls "$mh" "$ms")")"
+    IFS=: read -r mh mi ms msi mss <<<"$entry"
+    mail_lines+="$(printf '\n  %s  IMAP %s %s %s, SMTP %s %s %s' "$mh" "$mi" "$msi" "$(check mail_tls "$mh" "$mi" "$msi" imap)" \
+                   "$ms" "$mss" "$(check mail_tls "$mh" "$ms" "$mss" smtp)")"
 done
 
 cat <<EOF
