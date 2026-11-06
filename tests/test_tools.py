@@ -889,13 +889,15 @@ async def test_audit_never_holds_recipients_subjects_or_bodies(env, caplog):
     srv, _ = build(env, sender=sender)
     await srv.call_tool("mail_send", {"to": ["victim@y.co.za"], "subject": "Confidential merger", "text": "launch codes",
                                       "bcc": ["hidden@y.co.za"]})
-    sender.exc = MailError("SMTP refused: 550 victim@y.co.za unknown")
+    sender.exc = MailError("SMTP refused: 550 5.1.1 victim@y.co.za no such user here")
     with pytest.raises(ToolError, match="victim@y.co.za"):  # the caller sees the server's reason ...
         await srv.call_tool("mail_send", {"to": ["victim@y.co.za"], "subject": "Confidential merger", "text": "launch codes"})
     lines = audit_lines(caplog)
     assert [(l["tool"], l["outcome"], l["count"]) for l in lines] == [("mail_send", "ok", 2), ("mail_send", "error", None)]
     text = "\n".join(r.getMessage() for r in caplog.records)  # ... but no log line carries it
-    for secret in ("victim", "hidden", "Confidential", "launch codes", "pw", "550"):
+    # "5.1.1" and the reply text stand for the server's reply: a bare "550" can turn up inside the random
+    # grant id that every audit line carries, which made this test fail about once in a few hundred runs.
+    for secret in ("victim", "hidden", "Confidential", "launch codes", "pw", "5.1.1", "no such user"):
         assert secret not in text
 
 
