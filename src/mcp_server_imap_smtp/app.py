@@ -6,12 +6,15 @@ import argparse
 import functools
 import logging
 import os
+import sys
+import threading
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 import httpx
 import uvicorn
+from uvicorn.config import STARTUP_FAILURE
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.mcpserver import MCPServer
@@ -27,11 +30,17 @@ from .mail.imap import ImapClient
 from .mail.resolve import Resolver
 from .mail.sessions import Sessions
 from .mail.tools import register_mail_tools
-from .middleware import BodyGuard, Maintenance, RequestLimits, install_access_log_filter
+from .middleware import BodyGuard, Maintenance, OnStop, RequestLimits, install_access_log_filter
 from .ratelimit import RateLimiter
 from .store import Store
 
 REGISTER_BODY_MAX = 8192
+# Stopping (SIGTERM from systemd on every restart). Tool calls in flight get STOP_GRACE_SECONDS to finish; then
+# the ones still running are cut and kept IMAP sessions get sessions.STOP_LOGOUT_SECONDS for their LOGOUT. Anything
+# still holding the process STOP_SECONDS after the stop began (work no socket shutdown reaches, such as an
+# SMTP exchange or a converter) is abandoned: the process exits. The unit's TimeoutStopSec stays above this.
+STOP_GRACE_SECONDS = 3
+STOP_SECONDS = 7
 
 
 def instructions(settings: Settings) -> str:
@@ -94,6 +103,9 @@ def build_app(settings: Settings, *, verifier: Verifier | None = None, resolver:
                         per_network=frozenset({("GET", "/authorize"), ("POST", "/authorize")}))
     # Registration takes small JSON documents only (RFC 7591); see BodyGuard.
     app = BodyGuard(app, {("POST", "/register"): REGISTER_BODY_MAX})
+    # On shutdown, calls waiting on a mail server are cut and kept sessions logged out (Sessions.close)
+    # before the SDK waits for its cancelled calls.
+    app = OnStop(app, sessions.close)
     return Maintenance(app, functools.partial(store.purge_expired, refresh_ttl=settings.refresh_ttl))
 
 
@@ -106,9 +118,12 @@ def quiet_sdk_logs() -> None:
 
 def uvicorn_kwargs(settings: Settings) -> dict[str, Any]:
     """Login rate limiting keys on request.client.host, so it must be the real client. uvicorn only
-    rewrites it from X-Forwarded-For when told to trust the proxy; otherwise the header is ignored."""
+    rewrites it from X-Forwarded-For when told to trust the proxy; otherwise the header is ignored.
+    timeout_graceful_shutdown: without it uvicorn waits for every open request to end, however long,
+    before it stops."""
     kwargs: dict[str, Any] = {"host": settings.listen_host, "port": settings.listen_port,
-                              "proxy_headers": settings.trusted_proxy}
+                              "proxy_headers": settings.trusted_proxy,
+                              "timeout_graceful_shutdown": STOP_GRACE_SECONDS}
     if settings.trusted_proxy:
         kwargs["forwarded_allow_ips"] = settings.forwarded_allow_ips
     return kwargs
@@ -122,4 +137,34 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     quiet_sdk_logs()
     install_access_log_filter()      # a logger filter, so uvicorn's own dictConfig keeps it
-    uvicorn.run(build_app(settings), **uvicorn_kwargs(settings))
+    serve(build_app(settings), settings)
+
+
+class _Server(uvicorn.Server):
+    """uvicorn's server, with a last-resort bound on stopping (STOP_SECONDS). Only shutdown() is extended:
+    sse-starlette replaces uvicorn's handle_exit to end open event streams on shutdown."""
+
+    async def shutdown(self, sockets=None) -> None:
+        threading.Thread(target=_exit_after, args=(STOP_SECONDS,), name="mcp-imap-smtp-stop", daemon=True).start()
+        await super().shutdown(sockets)
+
+
+def _exit_after(seconds: float) -> None:
+    """Runs from the start of the stop. A worker thread blocked where nothing can interrupt it would keep the
+    process alive (uvicorn's shutdown waits for its call, and Python waits for its thread at exit) until its
+    own timeout; after `seconds` the process exits instead. A clean stop ends long before."""
+    threading.Event().wait(seconds)
+    logging.getLogger("mcp_server_imap_smtp").warning(
+        "stopping took longer than %s s; exiting with work still running", seconds)
+    logging.shutdown()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
+
+
+def serve(app: ASGIApp, settings: Settings) -> None:
+    """uvicorn.run(app, **uvicorn_kwargs(settings)), with the stop bound above."""
+    server = _Server(uvicorn.Config(app, **uvicorn_kwargs(settings)))
+    server.run()
+    if not server.started:
+        sys.exit(STARTUP_FAILURE)        # as uvicorn.run does

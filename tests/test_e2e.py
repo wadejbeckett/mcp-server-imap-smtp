@@ -272,6 +272,16 @@ def test_uvicorn_kwargs_honours_trusted_proxy(tmp_path):
     assert custom["forwarded_allow_ips"] == "10.0.0.2"
 
 
+def test_uvicorn_waits_only_briefly_for_calls_in_flight_when_stopping(tmp_path):
+    """Without a bound uvicorn waits for every open request, however long, before it stops (and systemd
+    then kills it); calls still running after the grace are cut."""
+    from mcp_server_imap_smtp.app import STOP_SECONDS
+    from mcp_server_imap_smtp.mail.sessions import STOP_LOGOUT_SECONDS
+    grace = uvicorn_kwargs(make_settings(tmp_path))["timeout_graceful_shutdown"]
+    assert 0 < grace <= 5
+    assert grace + STOP_LOGOUT_SECONDS < STOP_SECONDS < 10
+
+
 # Client ID Metadata Documents: the client_id is an https URL whose document the gateway fetches (here, a fake).
 CIMD_ID = "https://chatgpt.com/oauth/client.json"
 CIMD_CB = "https://chatgpt.com/connector_platform_oauth_redirect"

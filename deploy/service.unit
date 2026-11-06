@@ -15,6 +15,8 @@ WorkingDirectory=/var/lib/@NAME@
 Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 Restart=on-failure
 RestartSec=5s
+# The service exits within 7 seconds of SIGTERM by itself (app.STOP_SECONDS: calls in flight get 3 s, kept
+# IMAP sessions are logged out); this is only the backstop.
 TimeoutStopSec=30s
 UMask=0077
 # The sealing secret (config.load_sealing_secret), readable only by root on disk; install.sh creates it.

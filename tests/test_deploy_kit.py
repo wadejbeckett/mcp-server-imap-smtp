@@ -23,3 +23,13 @@ def test_security_updates_restart_services():
     install = (DEPLOY / "install.sh").read_text()
     assert " needrestart " in install and "$nrconf{restart}" in install
     assert "Unattended-Upgrade::Automatic-Reboot" in install
+
+
+def test_systemd_stop_timeout_is_only_a_backstop_above_the_services_own_bound():
+    """The service exits within app.STOP_SECONDS of SIGTERM by itself; systemd kills only well after that."""
+    import re
+    from mcp_server_imap_smtp.app import STOP_SECONDS
+    unit = (DEPLOY / "service.unit").read_text()
+    timeout = int(re.search(r"^TimeoutStopSec=(\d+)s$", unit, re.MULTILINE)[1])
+    assert timeout >= 2 * STOP_SECONDS
+    assert "KillMode=" not in unit and "SendSIGKILL=no" not in unit     # the defaults: SIGTERM, then SIGKILL
