@@ -205,6 +205,7 @@ EOF
     log "VM up in $((SECONDS - start)) s"
 }
 
+# shellcheck disable=SC2032,SC2033   # the second "vm" is the host alias in ssh_config, not this function
 vm() { ssh -F "$W/ssh_config" vm "$@"; }
 vm_copy() { scp -q -F "$W/ssh_config" "$@"; }
 
