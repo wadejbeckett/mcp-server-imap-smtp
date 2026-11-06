@@ -74,6 +74,10 @@ check_operator_cert() {
     openssl x509 -in "$cert" -noout -checkend 0 >/dev/null || { echo "TLS_CERT $cert has expired"; return 1; }
     [[ $(openssl x509 -in "$cert" -noout -subject_hash) != "$(openssl x509 -in "$cert" -noout -issuer_hash)" ]] \
         || { echo "TLS_CERT $cert is self-signed: browsers and AI apps refuse it. Use a certificate from a CA the users' apps trust"; return 1; }
+    # Read with an empty passphrase first: an encrypted key would otherwise fail the comparison below and be
+    # reported as belonging to another certificate.
+    openssl pkey -in "$key" -noout -passin pass: >/dev/null 2>&1 \
+        || { echo "TLS_KEY $key is encrypted or not a PEM private key: nginx needs it without a passphrase (openssl pkey -in <encrypted key> -out <new key>)"; return 1; }
     [[ $(openssl x509 -in "$cert" -noout -pubkey | openssl pkey -pubin -outform DER | sha256sum) == \
        "$(openssl pkey -in "$key" -pubout -outform DER 2>/dev/null | sha256sum)" ]] \
         || { echo "TLS_KEY $key does not belong to TLS_CERT $cert"; return 1; }

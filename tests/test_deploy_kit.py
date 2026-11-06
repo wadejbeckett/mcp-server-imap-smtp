@@ -159,6 +159,18 @@ def test_operator_certificate_with_another_key_is_refused(tmp_path):
     assert r.returncode != 0 and "does not belong" in r.stdout
 
 
+def test_passphrase_protected_operator_key_is_refused_for_what_it_is(tmp_path):
+    """nginx cannot use an encrypted key without ssl_password_file. Corporate CAs often issue one, and the check
+    used to call it a key that does not belong to the certificate, which sent the operator the wrong way."""
+    from cryptography.hazmat.primitives import serialization
+    cert, key = _make_cert(tmp_path)
+    plain = serialization.load_pem_private_key(key.read_bytes(), password=None)
+    key.write_bytes(plain.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                        serialization.BestAvailableEncryption(b"test-passphrase")))
+    r = _check_cert(cert, key)
+    assert r.returncode != 0 and "encrypted" in r.stdout and "does not belong" not in r.stdout
+
+
 def test_expired_operator_certificate_is_refused(tmp_path):
     cert, key = _make_cert(tmp_path, expired=True)
     r = _check_cert(cert, key)
