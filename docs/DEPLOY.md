@@ -112,7 +112,7 @@ Let's Encrypt can only issue a certificate when its servers reach `http://<name>
 
 in place of `--setenv ADMIN_EMAIL=... --setenv LE_AGREE_TOS=yes` in the section 4 command. Copy the files to the server first. `TLS_CERT` is the server certificate followed by any intermediate certificates (PEM), `TLS_KEY` its private key, both absolute paths of letters, digits and `._/+-`. Before anything on the server changes, `install.sh` checks that the key is owned by root and readable by nobody else (`chmod 600`; a group such as `ssl-cert` may read it), that the key belongs to the certificate, that the certificate is valid for `MCP_HOSTNAME` and has not expired, and that it is not self-signed: browsers and AI apps refuse a self-signed certificate, so there is no self-signed mode. It warns when the certificate expires within 30 days or does not chain to a CA the server itself trusts. nginx then serves the files from where they are, no certbot runs, and the paths are remembered in `/etc/$NAME/tls-certificate`, so later runs of `install.sh` need neither `TLS_CERT` nor `ADMIN_EMAIL`.
 
-**Renewal is yours.** No timer renews this certificate. Before it expires, put the new certificate and key at the same paths and run `systemctl reload nginx` (or re-run `install.sh`, which checks them again). The summary's "Renewal" line says so, and `deploy/smoke.sh` fails from 14 days before expiry, so running it from your monitoring warns you in time. To go back to Let's Encrypt, delete `/etc/$NAME/tls-certificate` and re-run `install.sh` with `ADMIN_EMAIL` and `LE_AGREE_TOS=yes`.
+**Renewal is yours.** No timer renews this certificate. Before it expires, put the new certificate and key at the same paths and run `systemctl reload nginx` (or re-run `install.sh`, which checks them again). The summary's "Renewal" line says so, and `deploy/smoke.sh` fails from 14 days before expiry, so running it from your monitoring warns you in time. To go back to Let's Encrypt, delete `/etc/$NAME/tls-certificate` and re-run `install.sh` with `ADMIN_EMAIL` and `LE_AGREE_TOS=yes`. certbot only runs when `/etc/letsencrypt/live/<name>/` holds no certificate, so if your files are there (see the end of this section), move them out first; otherwise `install.sh` serves them again and its summary says "Renewal none".
 
 Where such a certificate can come from:
 
@@ -122,7 +122,7 @@ Where such a certificate can come from:
 
 A tunnel or proxy that terminates TLS in front of the gateway is not something the kit sets up; section 2 explains what a proxy in front of the name breaks, and [RUNNING.md](RUNNING.md) has the `trusted_proxy`, `forwarded_allow_ips` and `extra_allowed_hosts` settings for running behind one.
 
-Before `TLS_CERT` existed, the only way round Let's Encrypt was to put the files in `/etc/letsencrypt/live/<name>/` by hand. That still installs, but certbot never renews a certificate it did not issue, so `install.sh` now warns about it and its summary says "Renewal none"; re-run it once with `TLS_CERT` and `TLS_KEY` pointing at your files.
+Before `TLS_CERT` existed, the only way round Let's Encrypt was to put the files in `/etc/letsencrypt/live/<name>/` by hand. That still installs, but certbot never renews a certificate it did not issue, so `install.sh` now warns about it and its summary says "Renewal none"; re-run it once with `TLS_CERT` and `TLS_KEY` pointing at your files. Leaving them in certbot's directory works, but they must be moved out of it before going back to Let's Encrypt.
 
 ## 5. Verify
 
