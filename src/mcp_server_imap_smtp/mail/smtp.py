@@ -252,9 +252,11 @@ def _send(server: MailServer, address: str, password: str, msg: EmailMessage, bc
         size = wire_size(wire) if limit is not None else 0
         if limit is not None and size > limit:      # refused before AUTH and before MAIL FROM
             raise MailError(too_large(size, limit, "the mail server (SMTP SIZE)"))
+        # Flattened from the EHLO features alone, so a refusal for a missing SMTPUTF8 also comes before AUTH
+        # and MAIL FROM.
+        data, options = _flatten(s, wire, [address, *rcpts], options)
         _login(s, address, password)
         started.append(True)        # sendmail starts with MAIL FROM
-        data, options = _flatten(s, wire, [address, *rcpts], options)
         refused = s.sendmail(address, rcpts, data, mail_options=options)
         return [r for r in rcpts if r not in refused]
     except _Cleartext as exc:

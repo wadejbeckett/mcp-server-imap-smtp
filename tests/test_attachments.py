@@ -818,6 +818,15 @@ def test_a_refusal_after_mail_from_is_not_marked(wire):
     assert not smtp.nothing_sent(exc.value)
 
 
+def test_an_international_envelope_refused_for_no_smtputf8_is_marked_as_nothing_sent(wire):
+    # Second review of item 7: the SMTPUTF8 check comes before MAIL FROM, so the slot can be given back.
+    client, server, ms = wire(extensions="8BITMIME")
+    with pytest.raises(MailError) as exc:
+        smtp.send(ms, ADDR, SECRET, compose.new(ADDR, ["josé@b.co"], "Hi", "body"))
+    assert smtp.nothing_sent(exc.value)
+    assert not getattr(server, "mail_from", None)
+
+
 def _limited(env, monkeypatch, sender, **limits):
     """A server like build()'s with send budgets set and the given sender."""
     import dataclasses
