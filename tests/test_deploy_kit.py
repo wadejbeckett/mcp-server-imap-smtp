@@ -266,3 +266,42 @@ def test_build_marks_a_release_dirty_when_the_readme_or_licence_changed():
     -dirty; otherwise rebuilding from the git id in BUILD_INFO would not give back the shipped bundle."""
     build = (DEPLOY / "build.sh").read_text()
     assert "status --porcelain -- src pyproject.toml README.md LICENSE deploy" in build
+
+
+# Ticket 76: scripts/install-test.sh removes its work directory at the end, but not the logs of a failed run.
+
+SCRIPTS = DEPLOY.parent / "scripts"
+
+
+def _install_test_function(name: str) -> str:
+    text = (SCRIPTS / "install-test.sh").read_text()
+    start = text.index(f"\n{name}() {{") + 1
+    return text[start:text.index("\n}\n", start) + 3]
+
+
+def _run_install_test_exit(tmp_path, rc: int) -> subprocess.CompletedProcess:
+    """Runs the script's EXIT handling on a work directory holding a run's logs, with docker stubbed out."""
+    base, w = tmp_path / "base", tmp_path / "base" / "run"
+    w.mkdir(parents=True)
+    for log in ("console.log", "old.build.log", "new.build.log", "install.1.log"):
+        (w / log).write_text(log)
+    (w / "disk.qcow2").write_text("disk")
+    script = ("docker() { :; }\n" + "".join(_install_test_function(f) for f in ("down", "keep_logs", "on_exit"))
+              + f"trap on_exit EXIT\nexit {rc}\n")
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                          env={"PATH": "/usr/bin:/bin", "W": str(w), "BASE_DIR": str(base), "CONTAINER": "none"})
+
+
+def test_install_test_keeps_the_logs_of_a_failed_run(tmp_path):
+    r = _run_install_test_exit(tmp_path, 1)
+    kept = tmp_path / "base" / "last-failure"
+    assert r.returncode == 1
+    assert not (tmp_path / "base" / "run").exists()
+    assert sorted(p.name for p in kept.iterdir()) == ["console.log", "install.1.log", "new.build.log", "old.build.log"]
+    assert str(kept) in r.stderr
+
+
+def test_install_test_keeps_nothing_after_a_passing_run(tmp_path):
+    r = _run_install_test_exit(tmp_path, 0)
+    assert r.returncode == 0
+    assert not (tmp_path / "base" / "run").exists() and not (tmp_path / "base" / "last-failure").exists()

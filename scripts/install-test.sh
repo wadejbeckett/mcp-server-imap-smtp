@@ -32,10 +32,12 @@
 # the names, certificates and Host headers they check are the real ones.
 #
 # Needs: qemu-system-x86_64 and qemu-img with /dev/kvm, genisoimage, docker, openssl, ssh, curl, git,
-# python3 >= 3.11 and uv. Takes about 10 minutes (20 with --upgrade) after the first image download.
+# python3 >= 3.11 and uv. Takes about 4 minutes (6 with --upgrade) once the image is cached, plus the first
+# download of the image (about 430 MB).
 # Environment: INSTALL_TEST_DIR (default ~/.cache/mcp-server-imap-smtp-install-test) holds the image
-# cache and each run's work directory; INSTALL_TEST_PORT_BASE (default 22000) picks the host ports
-# BASE+22 (SSH), +80, +443, +993 (IMAPS) and +465 (SMTPS), all on 127.0.0.1.
+# cache, each run's work directory and, after a failed run, that run's logs in last-failure/;
+# INSTALL_TEST_PORT_BASE (default 22000) picks the host ports BASE+22 (SSH), +80, +443, +993 (IMAPS) and
+# +465 (SMTPS), all on 127.0.0.1.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -71,11 +73,23 @@ down() {
     rm -rf "$W"
 }
 
+# keep_logs: copies a failed run's logs out of the work directory, which down() removes.
+keep_logs() {
+    local keep="$BASE_DIR/last-failure" f
+    rm -rf "$keep"
+    mkdir -p "$keep"
+    for f in "$W"/console.log "$W"/*.build.log "$W"/install.*.log; do
+        if [[ -f $f ]]; then cp "$f" "$keep/"; fi
+    done
+    printf '\n[install-test] The logs of this run (console.log, *.build.log, install.N.log) are in %s\n' "$keep" >&2
+}
+
 on_exit() {
     local rc=$?
     if [[ ${KEEP:-0} == 1 ]]; then
         printf '\nKEEP=1: VM and %s left running. ssh -F %s/ssh_config vm; %s down to remove.\n' "$CONTAINER" "$W" "$0"
     else
+        (( rc == 0 )) || keep_logs
         down
     fi
     exit $rc
@@ -182,10 +196,10 @@ Host vm
 EOF
     local start=$SECONDS
     until vm true 2>/dev/null; do
-        (( SECONDS - start < 300 )) || die "VM did not accept SSH within 300 s (see $W/console.log)"
+        (( SECONDS - start < 300 )) || die "VM did not accept SSH within 300 s (see console.log in $BASE_DIR/last-failure)"
         sleep 3
     done
-    vm cloud-init status --wait >/dev/null || die "cloud-init failed in the VM"
+    vm cloud-init status --wait >/dev/null || die "cloud-init failed in the VM (see console.log in $BASE_DIR/last-failure)"
     log "VM up in $((SECONDS - start)) s"
 }
 
