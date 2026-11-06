@@ -26,7 +26,7 @@ from mcp_server_imap_smtp.mail import tools as tools_mod
 from mcp_server_imap_smtp.mail.hosts import Connector, MailServer
 from mcp_server_imap_smtp.mail.imap import ImapClient, MailAuthError, MailError, SearchQuery
 from mcp_server_imap_smtp.mail.resolve import Resolver
-from mcp_server_imap_smtp.mail.sessions import Lease, ServerBusy, Sessions
+from mcp_server_imap_smtp.mail.sessions import STOPPING, Lease, ServerBusy, Sessions
 from mcp_server_imap_smtp.ratelimit import RateLimiter
 from mcp_server_imap_smtp.store import Store
 from tests.test_imap_parsing import ScriptedServer, logout_ok
@@ -1351,6 +1351,47 @@ async def test_a_call_that_finishes_after_close_hands_its_session_back_for_logou
         await s.close()
         lease.keep = healthy
     assert closed == [healthy] and s.counts(HOST)["idle"] == 0
+
+
+@pytest.mark.anyio
+async def test_a_call_waiting_for_a_session_when_close_runs_is_refused_and_never_logs_in():
+    """A call queued at the mailbox's cap is not granted the slot the cut call hands back: it ends at once
+    with the stopping answer, and close() does not return while it is still queued."""
+    s, server, closed = make(cap=2, per_mailbox=1)
+    first = Blocked("first")
+    opened, outcome = [], []
+
+    def work(lease):
+        try:
+            with lease.session("a@x.example", lambda: first) as c:
+                c.command()
+        except OSError:
+            pass
+
+    async def holder():
+        async with s.lease(server, "g1", "a@x.example", pool_key=("g1", "a@x.example")) as lease:
+            await anyio.to_thread.run_sync(work, lease)
+
+    async def queued():
+        try:
+            async with s.lease(server, "g2", "a@x.example", pool_key=("g2", "a@x.example"), wait=10) as lease:
+                with lease.session("a@x.example", lambda: opened.append(1) or Kept("fresh")):
+                    pass
+            outcome.append("ran")
+        except ServerBusy as exc:
+            outcome.append(str(exc))
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(holder)
+        await anyio.to_thread.run_sync(first.waiting.wait, 5)
+        tg.start_soon(queued)
+        with anyio.fail_after(5):
+            while s.counts(HOST)["waiting"] != 1:
+                await anyio.sleep(0.01)
+            await s.close()
+        assert s.counts(HOST)["waiting"] == 0
+    assert opened == [] and outcome == [STOPPING]
+    assert s.counts(HOST) == {"used": 0, "idle": 0, "boxes": {}, "waiting": 0}
 
 
 def test_a_call_cut_by_close_opens_no_session():

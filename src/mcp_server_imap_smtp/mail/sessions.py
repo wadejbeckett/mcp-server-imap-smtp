@@ -345,7 +345,7 @@ class Sessions:
             raise
         if not lease.granted:
             self._dequeue(srv, lease)
-            raise ServerBusy(BUSY)
+            raise ServerBusy(STOPPING if self._stopping else BUSY)
         try:
             yield lease
         finally:
@@ -394,12 +394,17 @@ class Sessions:
         holding a session, so a call waiting on a silent mail server ends now rather than at its command
         timeout; log out every kept session; refuse new leases. Returns once every LOGOUT has finished, or
         after `wait` seconds: a mail server that does not answer cannot hold the stop. Sessions handed back
-        by cut calls are closed, never kept."""
+        by cut calls are closed, never kept. Calls still waiting for a session are woken without one, so
+        they end with the stopping answer rather than log in when a cut call hands its slot back."""
         self._stopping = True
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None
         for srv in self._servers.values():
+            for waiting in list(srv.queues.values()):
+                for lease in list(waiting):
+                    self._unqueue(srv, lease)
+                    lease.event.set()       # not granted: lease() raises ServerBusy(STOPPING)
             for lease in list(srv.leases):
                 lease.cut()
             for entry in list(srv.idle):
@@ -473,8 +478,9 @@ class Sessions:
 
     def _pump(self, srv: _Server) -> None:
         """Serve waiting calls while sessions are free (or idle ones can be closed). The grant served least
-        recently goes first; if its call needs more sessions than are free, nobody overtakes it."""
-        while srv.queues:
+        recently goes first; if its call needs more sessions than are free, nobody overtakes it. Nothing is
+        granted once the service is stopping."""
+        while srv.queues and not self._stopping:
             if srv.used >= srv.cap and not srv.idle:
                 return
             for name in sorted(srv.queues, key=lambda q: srv.served.get(q, -1)):
