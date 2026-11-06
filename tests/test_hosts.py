@@ -109,13 +109,14 @@ def test_ehlo_name_is_not_part_of_the_servers_identity():
 
 
 @pytest.mark.parametrize("name", ["Bad Name", "a..b", "-x.example", "x.example.", "[IPv6:192.0.2.1]",
-                                  "[2001:db8::1]", "[IPv6:fe80::1%eth0]", "[192.0.2.256]", "[]"])
+                                  "[2001:db8::1]", "[IPv6:fe80::1%eth0]", "[ipv6:192.0.2.1]", "[192.0.2.256]", "[]"])
 def test_ehlo_name_must_be_a_dns_name_or_address_literal(name):
     with pytest.raises(ValueError, match="ehlo_name"):
         MailServer("mail1.hosting.example", ehlo_name=name)
 
 
 @pytest.mark.parametrize("name", ["mcp.example.test", "[192.0.2.1]", "[IPv6:2001:db8::1]",
-                                  "[IPv6:2001:0db8:0:0:0:0:0:1]", "Mcp.Example.test"])
+                                  "[IPv6:2001:0db8:0:0:0:0:0:1]", "Mcp.Example.test",
+                                  "[ipv6:2001:db8::1]", "[IPV6:2001:db8::1]"])
 def test_ehlo_name_accepts_names_and_address_literals(name):
     assert MailServer("mail1.hosting.example", ehlo_name=name).ehlo_name == name
