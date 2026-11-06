@@ -278,6 +278,12 @@ def _join(pairs) -> str:
     return ", ".join(formataddr(p) for p in pairs)
 
 
+def _quoted_text(o: dict) -> str:
+    """The original's text as the AI read it, marked [truncated] when the AI was shown only part of it, as the
+    HTML quote is (render.quotable_html)."""
+    return o["text"] + ("\n[truncated]" if o["truncated"] else "")
+
+
 def _attribution(o: dict) -> str:
     return f"On {o['date']}, {o['from']} wrote:"
 
@@ -326,7 +332,7 @@ def reply(original_raw: bytes, from_addr, text, html=None, reply_all=False, fetc
         raise MailError("the original message has no sender address to reply to")
     body, tail = text, ""
     if quote == "full":
-        quoted = "\n".join("> " + line for line in o["text"].splitlines())
+        quoted = "\n".join("> " + line for line in _quoted_text(o).splitlines())
         body = f"{text}\n\n{_attribution(o)}\n{quoted}\n"
         if html:      # D9: the HTML part quotes the original too, as a cite blockquote of its safe HTML
             tail = (f'<br><div class="moz-cite-prefix">{html_lib.escape(_attribution(o), quote=False)}<br></div>'
@@ -381,7 +387,7 @@ def forward(original_raw: bytes, from_addr, to, text, html=None, mode: str = "at
     else:
         head = "---------- Forwarded message ----------"
         block = "\n".join(f"{n}: {v}" for n, v in _forward_block(o))
-        body = f"{text}\n\n{head}\n{block}\n\n{o['text']}\n"
+        body = f"{text}\n\n{head}\n{block}\n\n{_quoted_text(o)}\n"
         tail = ""
         if html:
             rows = "".join(f"{html_lib.escape(n)}: {html_lib.escape(v, quote=False)}<br>" for n, v in _forward_block(o))

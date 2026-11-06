@@ -779,3 +779,15 @@ def test_an_8bit_original_to_a_server_without_8bitmime_is_made_7bit(wire):
     smtp.send(ms, ADDR, SECRET, m)
     server.join(timeout=5)
     assert server.data.isascii() and "BODY=8BITMIME" not in server.mail_from.upper()
+
+
+def test_a_truncated_original_is_marked_in_the_text_quote_too():
+    orig = raw_message(body="A" * 60_000 + " TAIL-UNSEEN")
+    for m in (compose.reply(orig, "me@x.example", "ok", html="<p>ok</p>"),
+              compose.forward(orig, "me@x.example", ["b@x.example"], "fyi", html="<p>fyi</p>", mode="inline")):
+        m = parse(m.as_bytes())
+        text, html = m.get_body(("plain",)).get_content(), m.get_body(("html",)).get_content()
+        assert "TAIL-UNSEEN" not in text and text.rstrip().endswith("[truncated]")
+        assert "[truncated]" in html
+    short = parse(compose.reply(raw_message(), "me@x.example", "ok").as_bytes()).get_body(("plain",)).get_content()
+    assert "[truncated]" not in short
