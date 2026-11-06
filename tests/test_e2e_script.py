@@ -5,6 +5,7 @@ import base64
 import importlib.util
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -158,6 +159,19 @@ def test_redactor_hides_plain_and_url_encoded_secrets():
     assert PASSWORD not in out and "tok_abcdef" not in out and out.count("[redacted]") == 4
 
 
+def strings(value):
+    """Every string in a parsed JSON value, keys included: what a reader of the --json output sees."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from strings(v)
+    elif isinstance(value, str):
+        yield value
+
+
 def test_report_redacts_failure_details(capsys):
     redact = e2e.Redactor()
     redact.add(PASSWORD)
@@ -165,7 +179,18 @@ def test_report_redacts_failure_details(capsys):
     report.add("FAIL", "sign-in", f"server said: {PASSWORD}")
     out = capsys.readouterr().out
     assert PASSWORD not in out and out.startswith("FAIL  sign-in: server said: [redacted]")
-    assert PASSWORD not in json.dumps(report.summary(BASE, [], None, 1.0))
+    parsed = json.loads(report.json(report.summary(BASE, [], None, 1.0)))
+    assert not any(PASSWORD in s for s in strings(parsed))
+
+
+def test_json_output_is_redacted_before_it_is_escaped():
+    # json.dumps escapes the non-ASCII character of the password, so redacting the serialised text misses it.
+    redact = e2e.Redactor()
+    redact.add(PASSWORD)
+    report = e2e.Report(redact, sys.stdout)
+    text = report.json({"base": BASE, "steps": [{"detail": f"said {PASSWORD}"}], PASSWORD: [PASSWORD]})
+    assert not any(PASSWORD in s for s in strings(json.loads(text)))
+    assert json.dumps(PASSWORD)[1:-1] not in text
 
 
 # the walk through the real app, in process
@@ -228,9 +253,171 @@ def test_walk_with_a_failing_mail_layer_reports_and_never_prints_a_secret(app_ht
     assert summary["ok"] is False and "mail_search" in summary["tools"]
     seen = secrets_seen(app_http.answers)
     assert len(seen) >= 4                      # tokens of the exchange and the refresh, the code, the req id
-    for secret in {PASSWORD, ADDRESS, *seen}:
-        for variant in (secret, e2e.urllib.parse.quote(secret, safe=""), base64.b64encode(secret.encode()).decode()):
+    assert_no_secret(out, err, {PASSWORD, ADDRESS, *seen})
+
+
+def assert_no_secret(out, err, secrets):
+    """No secret in the check lines or the --json object, as printed (JSON-escaped too) or once parsed."""
+    parsed = list(strings(json.loads(out))) if out.strip() else []
+    for secret in secrets:
+        for variant in (secret, e2e.urllib.parse.quote(secret, safe=""), base64.b64encode(secret.encode()).decode(),
+                        json.dumps(secret)[1:-1]):
             assert variant not in out and variant not in err, secret
+            assert not any(variant in s for s in parsed), secret
+
+
+# registration on an instance that refuses loopback redirects
+
+@pytest.fixture
+def app_http_with(tmp_path):
+    """An AppHttp on the real app built with the given settings."""
+    clients = []
+
+    def make(**settings):
+        app = build_app(make_settings(tmp_path, **settings), opener=no_network, sender=no_network,
+                        verifier=lambda a, p, server: (a, p) == (ADDRESS, PASSWORD))
+        c = TestClient(app, base_url=BASE, follow_redirects=False)
+        clients.append(c.__enter__())
+        return AppHttp(c)
+    yield make
+    for c in clients:
+        c.__exit__(None, None, None)
+
+
+def test_instance_without_loopback_redirects_is_named_as_the_cause(app_http_with, capsys):
+    code, out, err = run(app_http_with(allow_loopback_redirects=False), capsys)
+    assert code == 1
+    steps = {s["name"]: s for s in json.loads(out)["steps"]}
+    detail = steps["client registration"]["detail"]
+    assert steps["client registration"]["outcome"] == "FAIL"
+    assert "allow_loopback_redirects" in detail and "--redirect-uri" in detail, detail
+
+
+def test_redirect_uri_on_the_allowlist_walks_a_hardened_instance(app_http_with, capsys):
+    allowed = "https://app.example.org/callback"
+    http = app_http_with(allow_loopback_redirects=False, redirect_allowlist=(allowed,))
+    code, out, err = run(http, capsys, "--redirect-uri", allowed)
+    steps = {s["name"]: s["outcome"] for s in json.loads(out)["steps"]}
+    for name in ("client registration", "authorization request", "sign-in page", "sign-in",
+                 "cross-site sign-in refused", "token exchange", "token refresh", "MCP initialize", "revocation",
+                 "revoked token refused"):
+        assert steps[name] == "PASS", (name, steps)
+
+
+@pytest.mark.parametrize("uri", ["app.example.org/cb", "ftp://app.example.org/cb", "https://app.example.org/cb#x"])
+def test_redirect_uri_must_be_an_absolute_http_url(uri, capsys):
+    env = {"MCP_E2E_ADDRESS": ADDRESS, "MCP_E2E_PASSWORD": PASSWORD}
+    assert e2e.main(["https://mcp.example.com", "--redirect-uri", uri], environ=env, http=NoSend()) == 2
+    assert "--redirect-uri" in capsys.readouterr().err
+
+
+class NoSend(e2e.Http):
+    def __init__(self): pass
+    def send(self, *a): raise AssertionError("nothing may be sent")
+
+
+# the walk never sends a secret off the instance's origin
+
+class Rewriting(AppHttp):
+    """Rewrites the app's answers the way a misconfigured proxy or a hostile instance could, and records the
+    origin and body of every request instead of sending one off the instance."""
+
+    def __init__(self, inner: AppHttp, rewrite):
+        super().__init__(inner.client)
+        self.rewrite, self.sent = rewrite, []
+
+    def send(self, method, url, headers, body):
+        self.sent.append((e2e.origin(url), body or b""))
+        if e2e.origin(url) != BASE:
+            return e2e.Response(200, e2e.Headers(), b"{}")
+        r = super().send(method, url, headers, body)
+        return e2e.Response(r.status, r.headers, self.rewrite(url, r.body))
+
+
+def foreign_sends(http):
+    return [body for where, body in http.sent if where != BASE]
+
+
+@pytest.mark.parametrize("action", ["http://127.0.0.1:9999/login", "https://other.example.org/login"])
+def test_password_is_not_posted_to_a_form_action_on_another_origin(app_http, capsys, action):
+    def rewrite(url, body):
+        return re.sub(rb'<form([^>]*?) action="[^"]*"', b'<form\\1 action="' + action.encode() + b'"', body) \
+            if b'type="password"' in body else body
+    http = Rewriting(app_http, rewrite)
+    code, out, err = run(http, capsys)
+    steps = {s["name"]: s for s in json.loads(out)["steps"]}
+    assert code == 1 and steps["sign-in"]["outcome"] == "FAIL"
+    assert "password not sent" in steps["sign-in"]["detail"]
+    assert not any(e2e.urllib.parse.quote_plus(PASSWORD).encode() in b for b in foreign_sends(http))
+    assert foreign_sends(http) == []
+
+
+def test_cross_site_post_is_not_sent_to_a_form_action_on_another_origin(app_http, capsys):
+    pages = []
+
+    def rewrite(url, body):
+        if b'type="password"' in body:
+            pages.append(url)
+            if len(pages) == 2:      # the second sign-in page is the cross-site attempt's
+                return re.sub(rb' action="[^"]*"', b' action="https://other.example.org/login"', body, count=1)
+        return body
+    http = Rewriting(app_http, rewrite)
+    run(http, capsys)
+    assert foreign_sends(http) == []
+
+
+@pytest.mark.parametrize("endpoint", ["http://127.0.0.1:9999/revoke", "https://other.example.org/revoke"])
+def test_revocation_endpoint_on_another_origin_fails_discovery(app_http, capsys, endpoint):
+    def rewrite(url, body):
+        if "/.well-known/oauth-authorization-server" in url:
+            doc = json.loads(body)
+            doc["revocation_endpoint"] = endpoint
+            return json.dumps(doc).encode()
+        return body
+    http = Rewriting(app_http, rewrite)
+    code, out, _ = run(http, capsys)
+    steps = {s["name"]: s for s in json.loads(out)["steps"]}
+    assert code == 1 and steps["authorization-server metadata"]["outcome"] == "FAIL"
+    assert "revocation_endpoint" in steps["authorization-server metadata"]["detail"]
+    assert foreign_sends(http) == []
+
+
+def test_cleanup_never_posts_the_refresh_token_to_another_origin():
+    class Record(e2e.Http):
+        def __init__(self): self.sent = []
+        def send(self, method, url, headers, body):
+            self.sent.append(url)
+            return e2e.Response(200, e2e.Headers(), b"{}")
+    http, report = Record(), e2e.Report(e2e.Redactor(), sys.stderr)
+    walk = e2e.Walk("https://mcp.example.com", "/mail", ADDRESS, PASSWORD, http, report)
+    walk.s.asm = {"revocation_endpoint": "https://other.example.org/revoke"}
+    walk.s.refresh, walk.s.access, walk.s.client_id = "refresh-token-value", "access-token-value", "client"
+    walk.cleanup()
+    steps = {s.name: s for s in report.steps}
+    assert steps["revocation"].outcome == "FAIL" and "another origin" in steps["revocation"].detail
+    assert not any(e2e.origin(u) != "https://mcp.example.com" for u in http.sent)
+
+
+# structured results
+
+class Answer(e2e.Http):
+    """Answers every MCP post with one tools/call result."""
+
+    def __init__(self, result): self.result = result
+    def send(self, method, url, headers, body):
+        message = {"jsonrpc": "2.0", "id": json.loads(body)["id"], "result": self.result}
+        return e2e.Response(200, e2e.Headers({"content-type": "application/json"}), json.dumps(message).encode())
+
+
+def test_a_tool_result_without_structured_content_fails_where_structure_is_checked():
+    text_only = {"content": [{"type": "text", "text": json.dumps({"mailboxes": [ADDRESS]})}]}
+    mcp = e2e.Mcp(Answer(text_only), BASE + "/mail", "token")
+    assert mcp.call("mail_accounts", {}) == {"mailboxes": [ADDRESS]}      # reading a value: the text will do
+    with pytest.raises(e2e.StepFailed, match="structuredContent"):
+        mcp.call("mail_accounts", {}, require_structured=True)
+    structured = {**text_only, "structuredContent": {"mailboxes": [ADDRESS]}}
+    assert e2e.Mcp(Answer(structured), BASE + "/mail", "t").call("mail_accounts", {}, require_structured=True) \
+        == {"mailboxes": [ADDRESS]}
 
 
 def test_walk_with_keep_leaves_the_connection(app_http, capsys):

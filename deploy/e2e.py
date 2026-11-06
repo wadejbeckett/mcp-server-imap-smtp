@@ -16,6 +16,9 @@ Credentials come only from the environment (MCP_E2E_ADDRESS, MCP_E2E_PASSWORD) o
 KEY=value file that only its owner may read. They are never printed, and neither are tokens or mail content.
 Only messages this script created are changed or removed. An http:// base URL is allowed for a loopback
 address only (local testing); the TLS and HSTS checks are then skipped.
+The client is registered with a loopback redirect URI (nothing listens there: the code is read from the
+connected page); for an instance with allow_loopback_redirects = false, pass --redirect-uri with a URI
+that its redirect_allowlist accepts.
 
 Python 3.11 or later, standard library only: copy this one file to any machine.
 """
@@ -131,6 +134,15 @@ def check_base(url: str) -> str:
         raise UsageError("http:// is allowed only for a loopback address (127.0.0.1, localhost, [::1]): "
                          "a password must not cross the network unencrypted")
     return url
+
+
+def check_redirect_uri(uri: str) -> str:
+    """--redirect-uri: an absolute http(s) URL without a fragment (RFC 6749 section 3.1.2)."""
+    parts = urllib.parse.urlsplit(uri)
+    if parts.scheme not in ("http", "https") or not parts.hostname or parts.fragment or "#" in uri:
+        raise UsageError("--redirect-uri must be an absolute http(s) URL without a fragment, "
+                         "e.g. https://app.example.org/callback")
+    return uri
 
 
 def origin(url: str) -> str:
@@ -288,6 +300,17 @@ class Report:
     def failed(self) -> int:
         return sum(s.outcome == "FAIL" for s in self.steps)
 
+    def json(self, summary: dict) -> str:
+        """The summary as JSON, every string redacted before it is serialised: json.dumps escapes non-ASCII
+        characters, quotes and backslashes, so the escaped text no longer holds a secret as it was added."""
+        def clean(value):
+            if isinstance(value, dict):
+                return {clean(k): clean(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return self.redact(value) if isinstance(value, str) else value
+        return json.dumps(clean(summary))
+
     def summary(self, base: str, tools: list[str], removal: str | None, seconds: float) -> dict:
         count = {o: sum(s.outcome == o for s in self.steps) for o in ("PASS", "FAIL", "SKIP")}
         return {"base": base, "ok": not count["FAIL"], "passed": count["PASS"], "failed": count["FAIL"],
@@ -396,7 +419,9 @@ class Mcp:
     def notify(self, method: str) -> int:
         return self.post({"jsonrpc": "2.0", "method": method}).status
 
-    def call(self, name: str, arguments: dict) -> dict:
+    def call(self, name: str, arguments: dict, require_structured: bool = False) -> dict:
+        """The tool's result object. require_structured fails a result that has no structuredContent (every
+        tool must return one); without it the JSON of a text block will do, for reading a value."""
         result = self.request("tools/call", {"name": name, "arguments": arguments})
         if result.get("isError"):
             text = " ".join(c.get("text", "") for c in result.get("content", []) if c.get("type") == "text")
@@ -404,6 +429,8 @@ class Mcp:
         structured = result.get("structuredContent")
         if isinstance(structured, dict):
             return structured
+        if require_structured:
+            raise StepFailed(f"{name}: no structuredContent in the result")
         for c in result.get("content", []):
             if c.get("type") == "text":
                 with contextlib.suppress(ValueError):
@@ -458,13 +485,14 @@ class State:
 
 class Walk:
     def __init__(self, base: str, mail_path: str, address: str, password: str, http: Http, report: Report,
-                 *, write: bool = False, send: bool = False, keep: bool = False):
+                 *, write: bool = False, send: bool = False, keep: bool = False, redirect_uri: str | None = None):
         self.base, self.mail_url = base, base + "/" + mail_path.strip("/") if mail_path.strip("/") else base + "/"
         self.address, self.password = address, password
         self.http, self.report, self.redact = http, report, report.redact
         self.write, self.send, self.keep = write, send, keep
         self.https = base.startswith("https://")
         self.s = State()
+        self.redirect_uri = redirect_uri
         self.mcp: Mcp | None = None
         self.redact.add(address, password)
 
@@ -546,7 +574,9 @@ class Walk:
             problems = []
             if str(asm.get("issuer", "")).rstrip("/") != self.base:
                 problems.append(f"issuer is {asm.get('issuer')!r}")
-            for key in ("authorization_endpoint", "token_endpoint", "registration_endpoint"):
+            for key in ("authorization_endpoint", "token_endpoint", "registration_endpoint", "revocation_endpoint"):
+                if key == "revocation_endpoint" and not asm.get(key):
+                    continue        # optional; reported below and again at the end
                 if not str(asm.get(key, "")).startswith(self.base + "/"):
                     problems.append(f"{key} is {asm.get(key)!r}")
             if "S256" not in asm.get("code_challenge_methods_supported", []):
@@ -564,14 +594,15 @@ class Walk:
 
     def registration(self) -> None:
         with self.step("client registration", required=True) as d:
-            # A loopback redirect on a port nothing listens on: the code is read from the connected page.
-            self.s.redirect_uri = f"http://127.0.0.1:{secrets.randbelow(16000) + 49152}/callback"
+            # Nothing needs to listen at the redirect URI: the code is read from the connected page. By default a
+            # loopback redirect on a random port; --redirect-uri for an instance that refuses loopback redirects.
+            self.s.redirect_uri = self.redirect_uri or f"http://127.0.0.1:{secrets.randbelow(16000) + 49152}/callback"
             r = self.http.post_json(self.s.asm["registration_endpoint"], {
                 "redirect_uris": [self.s.redirect_uri], "token_endpoint_auth_method": "none",
                 "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
                 "client_name": "mcp-server-imap-smtp e2e check"})
             if r.status != 201:
-                raise StepFailed(f"HTTP {r.status}, expected 201")
+                raise StepFailed(f"HTTP {r.status}, expected 201{_oauth_error(r)}{self._redirect_hint(r)}")
             reg = r.json()
             if not reg.get("client_id"):
                 raise StepFailed("no client_id")
@@ -579,7 +610,16 @@ class Walk:
                 self.redact.add(reg["client_secret"])
                 raise StepFailed("a client_secret was issued to a public client")
             self.s.client_id = reg["client_id"]
-            d.append("public client with a loopback redirect")
+            d.append("public client with " + ("the given redirect URI" if self.redirect_uri else "a loopback redirect"))
+
+    def _redirect_hint(self, r: Response) -> str:
+        """Why a registration refused for its redirect URI most likely failed, and what to do."""
+        if r.status != 400 or "redirect" not in r.text.lower():
+            return ""
+        if self.redirect_uri:
+            return "; the instance refuses --redirect-uri: give one on its redirect_allowlist"
+        return ("; the instance refuses loopback redirect URIs (allow_loopback_redirects = false): "
+                "give --redirect-uri with a URI on its redirect_allowlist (nothing is sent there)")
 
     # c. authorisation and sign-in
 
@@ -612,6 +652,14 @@ class Walk:
         self.redact.add(*form["inputs"].values())
         return r, form
 
+    def _form_action(self, login_url: str, form: dict) -> str:
+        """Where the sign-in form posts, refused when that is not the instance's own origin (another host, or
+        http behind an https base): the password must go nowhere else."""
+        action = urllib.parse.urljoin(login_url, form["action"] or login_url)
+        if origin(action) != origin(self.base):
+            raise StepFailed("the sign-in form posts to another origin; password not sent")
+        return action
+
     def authorisation(self) -> None:
         state = secrets.token_urlsafe(16)
         self.s.verifier, challenge = pkce_pair()
@@ -626,7 +674,7 @@ class Walk:
                 raise StepFailed("; ".join(problems))
             d.append("form found; security headers present" + ("" if self.https else " (HSTS not checked over http)"))
         with self.step("sign-in", required=True) as d:
-            action = urllib.parse.urljoin(login_url, form["action"] or login_url)
+            action = self._form_action(login_url, form)
             r = self.http.post_form(action, form_fields(form, self.address, self.password),
                                     {"Origin": origin(login_url), "Referer": login_url})
             callback = self._callback(r)
@@ -669,7 +717,7 @@ class Walk:
             # No password is sent: the refusal must come before the form is read, and a wrong password
             # must never reach a real mail server.
             fields = form_fields(form, "", "")
-            r = self.http.post_form(urllib.parse.urljoin(login_url, form["action"] or login_url), fields,
+            r = self.http.post_form(self._form_action(login_url, form), fields,
                                     {"Origin": CROSS_SITE_ORIGIN})
             if r.status != 403:
                 raise StepFailed(f"HTTP {r.status}, expected 403 for a post from another site")
@@ -739,7 +787,7 @@ class Walk:
     def _call(self, name: str, **arguments) -> dict:
         if name not in self.s.tools:
             raise Skip(f"{name} is not listed")
-        return self.mcp.call(name, arguments)
+        return self.mcp.call(name, arguments, require_structured=True)
 
     # g. read sweep
 
@@ -967,6 +1015,8 @@ class Walk:
             endpoint = self.s.asm.get("revocation_endpoint")
             if not endpoint:
                 raise StepFailed("no revocation_endpoint advertised: the connection stays until it expires")
+            if origin(endpoint) != origin(self.base):
+                raise StepFailed("the revocation endpoint is on another origin; refresh token not sent")
             r = self.http.post_form(endpoint, {"token": self.s.refresh, "token_type_hint": "refresh_token",
                                                "client_id": self.s.client_id})
             if r.status != 200:
@@ -1011,6 +1061,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--keep", action="store_true", help="keep the connection instead of revoking it at the end")
     ap.add_argument("--json", action="store_true", help="print a JSON summary on stdout (the check lines go to stderr)")
     ap.add_argument("--env-file", help="KEY=value file with MCP_E2E_ADDRESS and MCP_E2E_PASSWORD (mode 600)")
+    ap.add_argument("--redirect-uri", help="register this redirect URI instead of a loopback one, for an instance "
+                    "with allow_loopback_redirects = false: a URI on its redirect_allowlist (nothing is sent there)")
     ap.add_argument("--cafile", help="trust this CA bundle (PEM) instead of the system's")
     ap.add_argument("--timeout", type=float, default=60, help="seconds per HTTP request (default 60)")
     return ap.parse_args(argv)
@@ -1022,6 +1074,8 @@ def main(argv: list[str] | None = None, environ=None, http: Http | None = None) 
     out = sys.stderr if args.json else sys.stdout
     try:
         base = check_base(args.base_url)
+        if args.redirect_uri is not None:
+            check_redirect_uri(args.redirect_uri)
         address, password = credentials(args.env_file, environ)
         context = ssl.create_default_context(cafile=args.cafile) if args.cafile else ssl.create_default_context()
     except (UsageError, OSError, ssl.SSLError) as e:
@@ -1029,7 +1083,7 @@ def main(argv: list[str] | None = None, environ=None, http: Http | None = None) 
         return 2
     report = Report(Redactor(), out)
     walk = Walk(base, args.mail_path, address, password, http or Http(args.timeout, context), report,
-                write=args.write, send=args.send, keep=args.keep)
+                write=args.write, send=args.send, keep=args.keep, redirect_uri=args.redirect_uri)
     start = time.monotonic()
     try:
         walk.run()
@@ -1041,7 +1095,7 @@ def main(argv: list[str] | None = None, environ=None, http: Http | None = None) 
     else:
         print(f"e2e: FAILED ({summary['failed']} of {len(report.steps)} checks)", file=out)
     if args.json:
-        print(report.redact(json.dumps(summary)))
+        print(report.json(summary))
     return 0 if summary["ok"] else 1
 
 
