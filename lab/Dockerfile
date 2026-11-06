@@ -15,6 +15,6 @@ COPY postfix/ /etc/postfix/lab/
 COPY entrypoint.sh /usr/local/sbin/lab-entrypoint
 RUN chmod -R go-w /etc/dovecot/lab /etc/postfix/lab && /usr/local/sbin/lab-entrypoint configure
 
-EXPOSE 993 465 587 4190
+EXPOSE 993 143 465 587 4190
 ENTRYPOINT ["/usr/local/sbin/lab-entrypoint"]
 CMD ["run"]

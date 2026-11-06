@@ -18,7 +18,7 @@ PROFILES=(flat:10 prefixed:11 stripped:12)
 
 ports() {   # profile prefix -> docker -p arguments
   local p="$1"
-  echo "-p 127.0.0.1:${p}993:993 -p 127.0.0.1:${p}465:465 -p 127.0.0.1:${p}587:587 -p 127.0.0.1:${p}190:4190"
+  echo "-p 127.0.0.1:${p}993:993 -p 127.0.0.1:${p}143:143 -p 127.0.0.1:${p}465:465 -p 127.0.0.1:${p}587:587 -p 127.0.0.1:${p}190:4190"
 }
 
 make_tls() {
@@ -41,10 +41,10 @@ make_tls() {
   echo "lab CA written to $TLS/ca.pem (scripts/lab.sh clean renews it)"
 }
 
-wait_ready() {   # container: until Dovecot (993, 4190) and Postfix (465, 587) listen inside it
+wait_ready() {   # container: until Dovecot (993, 143, 4190) and Postfix (465, 587) listen inside it
   local name="$1" i
   for i in $(seq 1 60); do
-    if docker exec "$name" bash -c 'for p in 993 4190 465 587; do (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null || exit 1; done' \
+    if docker exec "$name" bash -c 'for p in 993 143 4190 465 587; do (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null || exit 1; done' \
         >/dev/null 2>&1; then return 0; fi
     if [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" != "true" ]; then
       echo "$name stopped:" >&2; docker logs --tail 30 "$name" >&2; return 1
@@ -80,7 +80,8 @@ status() {
   docker ps -a --filter label=mcp-imap-smtp-lab=1 --format 'table {{.Names}}\t{{.Status}}'
   for entry in "${PROFILES[@]}"; do
     p="${entry##*:}"
-    printf '%-9s IMAPS %s993  SMTPS %s465  submission %s587  ManageSieve %s190\n' "${entry%%:*}" "$p" "$p" "$p" "$p"
+    printf '%-9s IMAPS %s993  IMAP+STARTTLS %s143  SMTPS %s465  submission %s587  ManageSieve %s190\n' \
+      "${entry%%:*}" "$p" "$p" "$p" "$p" "$p"
   done
 }
 

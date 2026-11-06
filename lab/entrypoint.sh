@@ -52,6 +52,11 @@ run() {
     echo "unknown LAB_PROFILE $profile" >&2; exit 2
   fi
   cp "/etc/dovecot/lab/profile-$profile.conf" /etc/dovecot/lab/active-profile.conf
+  # Stripped: submission on 587 offers no STARTTLS at all (and, with smtpd_tls_auth_only, no AUTH), the
+  # server a connector set to smtp_security = "starttls" must refuse.
+  if [ "$profile" = stripped ]; then
+    postconf -P 'submission/inet/smtpd_tls_security_level=none'
+  fi
   # Dovecot puts its auth and LMTP sockets in Postfix's private directory, so it must exist first.
   install -d -o postfix -g root -m 0700 /var/spool/postfix/private
   dovecot

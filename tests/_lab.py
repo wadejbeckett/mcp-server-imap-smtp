@@ -39,9 +39,15 @@ class Profile:
     def submission(self): return self.port(587)
     @property
     def sieve(self): return self.port(190)
+    @property
+    def imap(self): return self.port(143)
 
-    def server(self) -> MailServer:
-        return MailServer(HOST, imap_port=self.imaps, smtp_port=self.smtps, domains=("*",), match_mx=False)
+    def server(self, imap: str = "tls", smtp: str = "tls") -> MailServer:
+        """The profile as a configured mail server; "starttls" uses IMAP 143 or submission 587 with STARTTLS."""
+        return MailServer(HOST, imap_port=self.imap if imap == "starttls" else self.imaps,
+                          smtp_port=self.submission if smtp == "starttls" else self.smtps,
+                          imap_security=imap, smtp_security=smtp, domains=("*",), match_mx=False,
+                          ehlo_name="lab-client.example.test")
 
 
 FLAT = Profile("flat", 10)          # flat namespace, every extension
@@ -74,6 +80,37 @@ def require_lab() -> None:
             socket.create_connection((HOST, p.imaps), timeout=3).close()
         except OSError:
             pytest.fail(f"lab profile {p.name} is not listening on {p.imaps}: run scripts/lab.sh up")
+
+
+class _Recording(socket.socket):
+    """A plain socket that keeps a copy of everything written to it. Once TLS wraps it, the TLS socket takes
+    over the connection, so what is recorded is exactly what went out in cleartext."""
+
+    def sendall(self, data, *args):
+        self.recorded.append(bytes(data))
+        return super().sendall(data, *args)
+
+    def send(self, data, *args):
+        self.recorded.append(bytes(data))
+        return super().send(data, *args)
+
+
+@contextlib.contextmanager
+def record_plaintext(monkeypatch):
+    """Yields a list that receives every chunk the connector writes to a mail server before TLS is up (the
+    connector opens its sockets with socket.create_connection, in mail/hosts.py)."""
+    recorded: list[bytes] = []
+    real = socket.create_connection
+
+    def connect(*args, **kwargs):
+        plain = real(*args, **kwargs)
+        timeout = plain.gettimeout()
+        sock = _Recording(plain.family, plain.type, plain.proto, fileno=plain.detach())
+        sock.settimeout(timeout)
+        sock.recorded = recorded
+        return sock
+    monkeypatch.setattr(socket, "create_connection", connect)
+    yield recorded
 
 
 @contextlib.contextmanager
